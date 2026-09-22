@@ -88,6 +88,13 @@
   const FRONT_READ = withRows(FRONT, { 11: '.kbbbbbbbbk.', 12: '.kbbbbbbbbk.' });
   // Eyes closed for a frame every few seconds; the timing is offset per sprite so they don't blink in unison.
   const blinkRow = (rows) => withRows(rows, { 5: '..ksdssdsk..' });
+  const SLEEP = withRows(FRONT, { 5: '..ksdssdsk..', 11: '.kbbbbbbbbk.', 12: '.kbbbbbbbbk.' });
+  const Z = ['www', '.w.', 'www'];
+  function drawZs(g, x, y, now) {
+    const t = (now / 1400) % 1;
+    drawRows(g, Z, x, y - Math.round(t * 8), { w: 'rgba(95,113,134,.9)' });
+    if (t > 0.4) drawRows(g, Z, x + 4, y - 4 - Math.round((t - 0.4) * 8), { w: 'rgba(95,113,134,.6)' });
+  }
   const blinking = (now, seed) => ((now + seed * 733) % 3400) < 130;
 
   // Small per-role tells. Headwear shows from every side; the rest only from the front.
@@ -276,8 +283,18 @@
     'followup-3': { desk: [20, 9], home: [21, 8], role: 'followup', drop: [19, 9] },
     factcheck: { desk: [25, 5], home: [26, 4], role: 'factcheck', drop: [24, 5] },
   };
-  const SEARCH = { at: [9, 1], slots: [[9, 2], [10, 2], [11, 2]] };
-  const LIBRARY = { at: [14, 1], slots: [[14, 2], [15, 2], [16, 2]] };
+  // Three spots at each counter, and three behind for when it's busy. A spot belongs to one sprite
+  // until it walks away, so two never share a terminal.
+  const SEARCH = { at: [9, 1], slots: [[9, 2], [10, 2], [11, 2], [9, 3], [10, 3], [11, 3]] };
+  const LIBRARY = { at: [14, 1], slots: [[14, 2], [15, 2], [16, 2], [14, 3], [15, 3], [16, 3]] };
+  const slotOwners = { search: Array(6).fill(null), library: Array(6).fill(null) };
+  function claimSlot(station, key) {
+    const owners = slotOwners[station];
+    let i = owners.indexOf(key);
+    if (i < 0) { i = owners.indexOf(null); if (i < 0) i = owners.length - 1; owners[i] = key; }
+    return i;
+  }
+  function releaseSlots(key) { for (const owners of Object.values(slotOwners)) for (let i = 0; i < owners.length; i++) if (owners[i] === key) owners[i] = null; }
   const INBOX = [1, 5];
   const BOARD = { at: [25, 9], drop: [24, 9] };
   const PRINTER = [27, 9];
@@ -293,8 +310,7 @@
     const block = (x, y, w = 1, h = 1) => { for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) b.add(`${x + i},${y + j}`); };
     for (let x = 0; x < COLS; x++) block(x, 0);
     for (let y = 0; y < ROWS; y++) { block(0, y); block(COLS - 1, y); }
-    for (const [key, d] of Object.entries(DESK)) {
-      if (key.startsWith('followup') && !s.agents.get(key)) continue;
+    for (const d of Object.values(DESK)) {
       if (d.desk) block(d.desk[0], d.desk[1], 2, 1);
       if (d.table) block(d.table[0], d.table[1], 4, 2);
     }
@@ -348,8 +364,8 @@
     return c;
   }
   function placeTile(c, place) {
-    if (place === 'search') return SEARCH.slots[c.slot % 3];
-    if (place === 'library') return LIBRARY.slots[c.slot % 3];
+    if (place === 'search') return SEARCH.slots[c.slot];
+    if (place === 'library') return LIBRARY.slots[c.slot];
     return DESK[c.key].home;
   }
   // Agents narrate between searches, so the latest entry alone would send them home and back every
@@ -400,14 +416,14 @@
     if (c.trip?.targetKey === agentId || c.trips.some((t) => t.targetKey === agentId)) return;
     queueTrip('assembly', agentId, 'question');
   }
-  function reset() { chars.clear(); flights = []; sparkles = []; }
+  function reset() { chars.clear(); flights = []; sparkles = []; for (const owners of Object.values(slotOwners)) owners.fill(null); }
 
   function inflightTo(targetKey) { let n = 0; for (const c of chars.values()) if (c.trip && c.trip.phase === 'go' && c.trip.targetKey === targetKey) n++; return n; }
   function pileCount(key) {
     const s = stateRef;
     const done = (id) => s.agents.get(id)?.status === 'completed';
     if (key === 'assembly') { let n = 0; for (const id of s.order) { const a = s.agents.get(id); if ((a.stage === 'research' || a.stage === 'followup') && a.status === 'completed') n++; } return Math.max(0, n - inflightTo('assembly')); }
-    if (key.startsWith('followup')) return Math.max(0, (done('assembly') ? 1 : 0) - inflightTo(key));
+    if (key.startsWith('followup')) return s.agents.get(key) ? Math.max(0, (done('assembly') ? 1 : 0) - inflightTo(key)) : 0;
     if (key === 'factcheck') return Math.max(0, (done('assembly-2') ? 1 : 0) - inflightTo('factcheck'));
     return 0;
   }
@@ -464,9 +480,9 @@
     const running = s.status === 'running';
 
     // Decide where everyone should be, then move them. Hand-off trips take priority once the sprite is home.
-    let searchSlot = 0, librarySlot = 0;
     for (const [key, d] of Object.entries(DESK)) {
-      const agent = s.agents.get(key);
+      // Follow-up desks are always staffed; with no agent yet, the sprite sleeps at its desk.
+      const agent = s.agents.get(key) || (key.startsWith('followup') ? { status: 'asleep', label: `Follow-up ${key.slice(-1)}`, trace: [] } : null);
       if (!agent) { chars.delete(key); continue; }
       const agent2 = key === 'assembly' ? s.agents.get('assembly-2') : null;
       const active = agent2 && agent2.status !== 'queued' ? agent2 : agent;
@@ -482,8 +498,7 @@
       let want = c.trips.length ? 'home' : wantedPlace(active);
       // Hysteresis: stay put for a moment after arriving, unless a hand-off is waiting or the agent is done.
       if (want !== c.at && c.at !== 'moving' && !c.trips.length && active.status === 'running' && now - c.arrivedAt < DWELL_MS) want = c.at;
-      if (want === 'search' && c.at !== 'search') c.slot = searchSlot++; else if (want === 'search') searchSlot = Math.max(searchSlot, c.slot + 1);
-      if (want === 'library' && c.at !== 'library') c.slot = librarySlot++; else if (want === 'library') librarySlot = Math.max(librarySlot, c.slot + 1);
+      if (want === 'search' || want === 'library') c.slot = claimSlot(want, key); else releaseSlots(key);
       if (c.trips.length && atTile(c, d.home) && !c.path.length) {
         c.trip = { ...c.trips.shift(), phase: 'go' };
         c.carry = c.trip.paperKind;
@@ -516,13 +531,13 @@
     push(PRINTER[1] + 0.9, () => drawPrinter(g, PRINTER[0], PRINTER[1], s.agents.get('factcheck')?.status === 'running'));
 
     for (const [key, d] of Object.entries(DESK)) {
-      const agent = s.agents.get(key);
-      if (!agent) continue;
       const c = chars.get(key);
+      const agent = s.agents.get(key) || c?.active;
+      if (!agent) continue;
       const active = c?.active || agent;
       const on = active.status === 'running' && !!c && c.at === 'home';
       if (d.table) push(d.table[1] + 1.9, () => drawTable(g, d.table[0], d.table[1], pileCount('assembly')));
-      else push(d.desk[1] + 0.9, () => drawDesk(g, d.desk[0], d.desk[1], { on, laneColor: shade(LANE[d.role], 0.9), papers: pileCount(key), paperKind: key.startsWith('followup') ? 'question' : 'paper', mug: active.status === 'queued', magnifier: key === 'factcheck' }));
+      else push(d.desk[1] + 0.9, () => drawDesk(g, d.desk[0], d.desk[1], { on, laneColor: shade(LANE[d.role], 0.9), papers: pileCount(key), paperKind: key.startsWith('followup') ? 'question' : 'paper', mug: active.status === 'queued' || active.status === 'asleep', magnifier: key === 'factcheck' }));
       push(d.home[1] + 0.5, () => drawChair(g, d.home[0], d.home[1]));
     }
 
@@ -542,10 +557,13 @@
         else if (c.at === 'library') rows = FRONT_READ;
         else if (a.status === 'running' && c.at === 'home') rows = FRONT_TYPE[Math.floor(now / 260) % 2];
         else rows = FRONT;
-        const bob = !moving && a.status !== 'running' ? Math.round(Math.sin(now / 700 + c.x) * 0.5) : 0;
+        const asleep = !moving && (a.status === 'queued' || a.status === 'asleep');
+        if (asleep) rows = SLEEP;
+        const bob = asleep ? Math.round(Math.sin(now / 1100 + c.x)) : !moving && a.status !== 'running' ? Math.round(Math.sin(now / 700 + c.x) * 0.5) : 0;
         g.fillStyle = C.shadow; g.fillRect(x + 2, y + 17, 8, 2); g.fillRect(x + 3, y + 19, 6, 1);
-        if (view === 'front' && !moving && blinking(now, c.seed)) rows = blinkRow(rows);
+        if (view === 'front' && !moving && !asleep && blinking(now, c.seed)) rows = blinkRow(rows);
         drawCharacter(g, c.role, x, y + bob, rows, view, flip);
+        if (asleep) drawZs(g, x + 13, y - 2, now + c.seed * 300);
         if (c.at === 'library' && !moving) drawPaper(g, x + 3, y + 10, 'paper');
         if (c.carry) drawPaper(g, x + (c.facing === 'left' ? -3 : 9), y + 8, c.carry);
         if (!moving && !c.trip) {
@@ -596,7 +614,7 @@
       }
       placed.push({ x: lx - wPx / 2, y: ly - dpr, w: wPx, h: hPx + dpr });
       ctx.fillStyle = 'rgba(20,32,46,.86)'; ctx.beginPath(); ctx.roundRect(lx - wPx / 2, ly - dpr, wPx, hPx, 4 * dpr); ctx.fill();
-      ctx.fillStyle = a.status === 'running' ? LANE[c.role] : a.status === 'failed' ? C.bad : a.status === 'completed' ? '#B8C4D0' : '#7F91A3';
+      ctx.fillStyle = a.status === 'running' ? LANE[c.role] : a.status === 'failed' ? C.bad : a.status === 'completed' ? '#B8C4D0' : '#6F8194';
       ctx.fillText(a.label, lx, ly);
     }
     ctx.font = `600 ${Math.round(10.5 * dpr)}px "Bricolage Grotesque", system-ui, sans-serif`;

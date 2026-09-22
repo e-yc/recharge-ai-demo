@@ -166,6 +166,22 @@
   .composer button.start:disabled { opacity: .5; cursor: default; }
   .form-error { color: var(--bad); font-size: 14px; padding: 6px 0 0; }
   .form-error:empty { display: none; }
+  /* While composing, the page is about the new brief: the old run's controls go, the panels dim. */
+  body.composing .replay, body.composing .view-toggle, body.composing .map { display: none !important; }
+  body.composing .panels { opacity: .22; pointer-events: none; }
+  body.composing .composer form { max-width: 980px; }
+  body.composing .composer textarea { min-height: 128px; font-size: 21px; }
+
+  /* Full-screen report: a reading column, nothing else. */
+  .report-head { display: flex; justify-content: flex-end; margin: 0 0 -6px; }
+  body.report-full header, body.report-full .composer, body.report-full .map, body.report-full .trace { display: none !important; }
+  body.report-full .panels { grid-row: 1 / -1; grid-template-columns: 1fr; border-top: 0; }
+  body.report-full .report { padding: 40px 32px 80px; }
+  body.report-full .report > * { max-width: 74ch; margin-left: auto; margin-right: auto; }
+  body.report-full article.report { max-width: 74ch; }
+  body.report-full article.report p, body.report-full article.report li { font-size: 17.5px; line-height: 1.55; }
+  body.report-full article.report h2 { font-size: 22px; margin-top: 34px; }
+  body.report-full .evidence-box { max-width: 74ch; margin-left: auto; margin-right: auto; }
 
   .map { padding: 4px 16px 0; overflow-x: auto; position: relative; }
   .map svg { display: block; width: 100%; min-width: 1040px; height: auto; }
@@ -266,7 +282,7 @@
   .entry.done .body { color: var(--muted); }
   .entry.failed .body { color: var(--bad); }
   .verdict-list { margin: 6px 0 0; padding: 0; list-style: none; }
-  .verdict-list li { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 4px 0; }
+  .verdict-list li { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 4px 0; align-items: start; }
 
   .pill {
     display: inline-block;
@@ -405,6 +421,7 @@
     <div id="trace-body"></div>
   </section>
   <section class="report">
+    <div class="report-head"><button type="button" class="ghost-btn" id="report-expand" hidden>Full screen</button></div>
     <div class="report-status" id="report-status">Nothing yet. The report is written on the second assembly pass.</div>
     <article class="report" id="report"></article>
     <div class="evidence-box" id="evidence" title="Click to dismiss"></div>
@@ -610,10 +627,25 @@
   function openComposer(open) {
     composerOpen = open;
     $('composer').hidden = !open;
+    document.body.classList.toggle('composing', open);
     $('new-brief').textContent = open && !noRunsYet ? 'Close' : 'New brief';
     if (open) $('composer-form').brief.focus();
     invalidate();
   }
+  let reportFull = false;
+  function setReportFull(on) {
+    reportFull = on;
+    document.body.classList.toggle('report-full', on);
+    $('report-expand').textContent = on ? 'Exit full screen' : 'Full screen';
+    if (on) document.querySelector('.report').scrollTop = 0;
+    invalidate();
+  }
+  $('report-expand').addEventListener('click', () => setReportFull(!reportFull));
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (reportFull) setReportFull(false);
+    else if (composerOpen && !noRunsYet) openComposer(false);
+  });
   $('new-brief').addEventListener('click', () => openComposer(!composerOpen));
   $('composer-cancel').addEventListener('click', () => openComposer(false));
   $('examples').addEventListener('click', (e) => {
@@ -636,8 +668,9 @@
 
   function renderHeader() {
     const hero = $('hero');
-    if (state.brief) hero.innerHTML = `<p class="brief">${esc(state.brief)}</p>`;
-    else hero.innerHTML = `<p class="brief placeholder">${noRunsYet ? 'Give the crew its first brief.' : 'Pick a run, or write a new brief.'}</p>`;
+    if (composerOpen) hero.innerHTML = `<p class="brief placeholder">${noRunsYet ? 'Give the crew its first brief.' : 'A new brief for the crew.'}</p>`;
+    else if (state.brief) hero.innerHTML = `<p class="brief">${esc(state.brief)}</p>`;
+    else hero.innerHTML = `<p class="brief placeholder">Pick a run, or write a new brief.</p>`;
     $('composer-cancel').hidden = noRunsYet;
     const live = $('live');
     live.className = `live ${state.status}`;
@@ -824,7 +857,9 @@
   /* ---------- report ---------- */
   function renderReport() {
     const status = $('report-status');
+    $('report-expand').hidden = !state.report;
     if (!state.report) {
+      if (reportFull) setReportFull(false);
       const running = [...state.agents.values()].filter((a) => a.status === 'running' && a.stage !== 'brief');
       if (state.status === 'idle') status.textContent = 'Nothing yet. The report is written on the second assembly pass.';
       else if (state.status === 'failed') status.textContent = `The run stopped: ${state.error || 'unknown error'}`;
