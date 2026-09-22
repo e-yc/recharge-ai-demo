@@ -1,0 +1,28 @@
+{
+  "name": "recharge-ai-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A multi-agent research crew you can watch work: three analysts, assembly, follow-ups, a fact-checker — and a pixel office where they hand the work around.",
+  "scripts": {
+    "research": "tsx src/cli.ts",
+    "serve": "tsx src/cli.ts serve",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.159",
+    "@hono/node-server": "^1.19.9",
+    "commander": "^14.0.3",
+    "dotenv": "^17.3.1",
+    "hono": "^4.12.3",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "tsx": "^4.7.1",
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.18"
+  },
+  "packageManager": "pnpm@9.15.9"
+}

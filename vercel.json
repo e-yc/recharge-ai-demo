@@ -1,0 +1,7 @@
+{
+  "framework": null,
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm research export --api \"$RESEARCH_API\" --out site",
+  "outputDirectory": "site",
+  "cleanUrls": true
+}

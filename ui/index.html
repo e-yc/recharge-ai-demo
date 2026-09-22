@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Research crew</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #14202E;
+    --ink-2: #1B2A3B;
+    --ink-3: #22344A;
+    --line: #2B3B4E;
+    --text: #EAF0F5;
+    --muted: #8FA1B3;
+    --dim: #5E7186;
+    --live: #F5B94A;
+    --ok: #6FCF97;
+    --bad: #E5695B;
+    --lane-brief: #8FA1B3;
+    --lane-macro: #4DB6C8;
+    --lane-trends: #A77BE0;
+    --lane-competitors: #F0876A;
+    --lane-assembly: #EAF0F5;
+    --lane-assembly-2: #EAF0F5;
+    --lane-followup: #E8C46B;
+    --lane-factcheck: #6FCF97;
+    --lane-report: #EAF0F5;
+    --font: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  /* Header and map stay put; the trace and report scroll on their own, like a CI page. */
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    height: 100vh;
+    overflow: hidden;
+  }
+  a { color: inherit; }
+  button, textarea, select, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  header {
+    display: grid;
+    gap: 10px;
+    padding: 18px 32px 8px;
+  }
+  /* Wide and short: the brief runs the full width in two or three lines so the map gets the height. */
+  .brief {
+    margin: 0;
+    font-size: clamp(16px, 1.35vw, 21px);
+    font-weight: 500;
+    line-height: 1.3;
+    letter-spacing: -0.005em;
+    max-width: none;
+    font-variation-settings: "opsz" 32;
+  }
+  .side { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .live { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
+  .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+  .live.running .live-dot { background: var(--live); }
+  .live.completed .live-dot { background: var(--ok); }
+  .live.failed .live-dot { background: var(--bad); }
+  #clock { min-width: 4ch; }
+  select {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 6px 10px;
+    max-width: 260px;
+  }
+  .status a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--line); }
+  .status a:hover { color: var(--text); }
+
+  /* Replay: appears once a run has finished. Plays the recorded events back on their own clock. */
+  .replay { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+  .replay button {
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+    color: var(--text);
+  }
+  .replay button.primary { background: var(--text); color: var(--ink); border-color: var(--text); font-weight: 600; }
+  .replay button:hover { border-color: var(--muted); }
+  .speeds { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .speeds button { border: 0; border-radius: 0; padding: 5px 10px; color: var(--muted); }
+  .speeds button + button { border-left: 1px solid var(--line); }
+  .speeds button[aria-pressed="true"] { background: var(--ink-3); color: var(--text); }
+  .replay input[type="range"] { width: 220px; accent-color: var(--live); }
+  #replay-clock { min-width: 5ch; text-align: right; color: var(--text); }
+
+  /* New-brief form, shown only when nothing is selected */
+  form.new-brief { display: grid; gap: 10px; max-width: 720px; }
+  form.new-brief textarea {
+    width: 100%;
+    min-height: 92px;
+    resize: vertical;
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 18px;
+    line-height: 1.35;
+  }
+  form.new-brief textarea::placeholder { color: var(--dim); }
+  form.new-brief .row { display: flex; gap: 12px; align-items: center; color: var(--muted); }
+  form.new-brief button {
+    white-space: nowrap;
+    background: var(--text);
+    color: var(--ink);
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  form.new-brief button:disabled { opacity: .5; cursor: default; }
+  .form-error { color: var(--bad); }
+
+  .map { padding: 4px 16px 0; overflow-x: auto; position: relative; }
+  .map svg { display: block; width: 100%; min-width: 1040px; height: auto; }
+  #office { display: block; width: 100%; height: clamp(320px, 48vh, 500px); }
+  .view-toggle { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; color: var(--muted); }
+  .view-toggle .view-label { padding: 5px 10px; border-right: 1px solid var(--line); font-size: 14px; }
+  .view-toggle button { background: transparent; border: 0; padding: 5px 12px; color: var(--muted); cursor: pointer; }
+  .view-toggle button + button { border-left: 1px solid var(--line); }
+  .view-toggle button[aria-pressed="true"] { background: var(--ink-3); color: var(--text); }
+  .map text { font-family: var(--font); fill: var(--muted); }
+  .map .stage { font-size: 13px; fill: var(--dim); }
+  .map .label { font-size: 15.5px; fill: var(--text); font-weight: 500; }
+  .map .sub { font-size: 12.5px; fill: var(--muted); }
+  .map .node.running .sub { fill: var(--lane); }
+  .map .node { cursor: pointer; }
+  .map .node.selected .halo { stroke: var(--text); stroke-opacity: .9; }
+  .map .halo { fill: none; stroke: transparent; stroke-width: 1.5; }
+  .map .core { fill: var(--ink-2); stroke-width: 2.5; }
+  .map .node.queued .core { stroke-dasharray: 3 3; stroke: var(--dim); }
+  .map .node.ghost .core { stroke-dasharray: 3 3; stroke: var(--dim); fill: none; }
+  .map .node.ghost .label { fill: var(--dim); font-weight: 400; }
+  .map .ring { fill: none; stroke-width: 2.5; opacity: 0; }
+  .map .node.running .ring { animation: ring 1.4s ease-out infinite; }
+  .map .node.completed .core { fill: var(--lane); }
+  .map .node.completed .tick { stroke: var(--ink); }
+  .map .tick { fill: none; stroke: transparent; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .map .node.failed .core { fill: var(--bad); stroke: var(--bad); }
+  .map .cross { stroke: transparent; stroke-width: 2.2; stroke-linecap: round; }
+  .map .node.failed .cross { stroke: var(--ink); }
+  .map .edge { fill: none; stroke-width: 2; stroke-opacity: .28; }
+  .map .edge.done { stroke-opacity: .6; }
+  .map .edge.flow { stroke-opacity: .9; stroke-dasharray: 6 8; animation: flow 1.1s linear infinite; }
+
+  .panels {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+    grid-template-rows: minmax(0, 1fr);
+    border-top: 1px solid var(--line);
+    min-height: 0;
+  }
+  .panels > section { min-height: 0; overflow: auto; padding: 18px 28px 40px; }
+  .trace { border-right: 1px solid var(--line); padding-top: 0 !important; }
+  /* Stays put while the trace scrolls, so the reader always knows whose reasoning this is. */
+  .trace-head { position: sticky; top: 0; z-index: 1; background: var(--ink); padding-top: 18px; box-shadow: 0 8px 12px -8px var(--ink); }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 4px; }
+  .panel-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .panel-head .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+  .task { margin: 0 0 14px; color: var(--muted); }
+  .ghost-btn {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 10px;
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ghost-btn:hover { color: var(--text); }
+  .empty { color: var(--dim); margin: 32px 0; max-width: 40ch; }
+
+  ol.trace-list { list-style: none; margin: 0; padding: 0; }
+  ol.trace-list > li {
+    display: grid;
+    grid-template-columns: 4ch minmax(0, 1fr);
+    gap: 14px;
+    padding: 7px 0;
+    border-top: 1px solid var(--ink-3);
+  }
+  ol.trace-list > li:first-child { border-top: 0; }
+  ol.trace-list time { color: var(--dim); font-size: 13px; padding-top: 2px; }
+  /* In the all-agents feed every entry says who did it; the colour is the agent's lane on the map. */
+  .who {
+    display: inline-block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--lane);
+    border-left: 3px solid var(--lane);
+    padding-left: 7px;
+    margin-bottom: 3px;
+  }
+  .entry.thinking .body { color: var(--muted); font-style: italic; border-left: 2px solid var(--line); padding-left: 10px; }
+  .entry.text .body { white-space: pre-wrap; }
+  .entry.search .q { font-weight: 500; }
+  .entry.search ul { margin: 6px 0 0; padding-left: 16px; color: var(--muted); font-size: 14px; }
+  .entry.search ul a { text-decoration: none; border-bottom: 1px solid var(--line); }
+  .entry.search .none { color: var(--dim); font-size: 14px; margin-top: 4px; }
+  .entry .headline { font-weight: 600; }
+  .entry ul.findings { margin: 6px 0 0; padding-left: 0; list-style: none; }
+  .entry ul.findings li { display: grid; grid-template-columns: 10px 1fr; gap: 10px; padding: 4px 0; }
+  .entry ul.findings .conf { width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; }
+  .conf.high { background: var(--ok); }
+  .conf.medium { background: var(--live); }
+  .conf.low { background: var(--dim); }
+  .entry .evidence { color: var(--muted); font-size: 14px; }
+  .entry .gaps ol { margin: 6px 0 0; padding-left: 18px; }
+  .entry .gaps .why { color: var(--muted); font-size: 14px; }
+  .entry .contra p { margin: 4px 0; color: var(--muted); font-size: 14px; }
+  .entry.done .body { color: var(--muted); }
+  .entry.failed .body { color: var(--bad); }
+  .verdict-list { margin: 6px 0 0; padding: 0; list-style: none; }
+  .verdict-list li { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 4px 0; }
+
+  .pill {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .pill.supported { color: var(--ok); border-color: var(--ok); }
+  .pill.unsupported { color: var(--muted); border-color: var(--dim); }
+  .pill.contradicted { color: var(--bad); border-color: var(--bad); }
+
+  .report-status { color: var(--muted); margin: 6px 0 14px; min-height: 26px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .now-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .now-list li { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; }
+  .now-list .who { margin: 0; }
+  .now-list .what { color: var(--muted); }
+  article.report { max-width: 62ch; }
+  article.report h1, article.report h2, article.report h3 { font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+  article.report h1 { font-size: 24px; }
+  article.report h2 { font-size: 18px; margin-top: 26px; }
+  article.report h3 { font-size: 16px; }
+  article.report p, article.report li { font-size: 15.5px; }
+  article.report li { margin: 4px 0; }
+  .claim {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 3px 5px;
+    margin: 0 1px 0 3px;
+    border-radius: 4px;
+    vertical-align: 3px;
+    cursor: pointer;
+    border: 1px solid var(--dim);
+    color: var(--muted);
+  }
+  .claim.supported { border-color: var(--ok); color: var(--ok); }
+  .claim.unsupported { border-color: var(--dim); color: var(--muted); border-style: dashed; }
+  .claim.contradicted { border-color: var(--bad); color: var(--bad); background: rgba(229,105,91,.12); }
+  .claim.active { background: var(--ink-3); }
+  .evidence-box {
+    position: sticky;
+    bottom: 0;
+    margin-top: 20px;
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .evidence-box:empty { display: none; }
+  .evidence-box .src { color: var(--muted); }
+
+  @keyframes ring { 0% { r: 14; opacity: .8; } 100% { r: 28; opacity: 0; } }
+  @keyframes flow { to { stroke-dashoffset: -14; } }
+  @media (prefers-reduced-motion: reduce) {
+    .map .node.running .ring, .map .edge.flow { animation: none; }
+    .map .node.running .ring { opacity: .6; r: 20; }
+  }
+  @media (max-width: 900px) {
+    body { height: auto; min-height: 100vh; overflow: auto; }
+    header { padding: 20px 16px 8px; }
+    .replay { flex-wrap: wrap; }
+    .panels { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+    .panels > section { overflow: visible; padding: 16px; }
+    .trace { border-right: 0; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div id="hero"></div>
+  <div class="side">
+    <div class="status">
+      <span class="live" id="live"><span class="live-dot"></span><span id="clock">0:00</span></span>
+      <span id="cost"></span>
+      <select id="runs" aria-label="Run"></select>
+      <a href="/" id="new-link">New brief</a>
+    </div>
+    <div class="view-toggle" role="group" aria-label="View" id="view-toggle" hidden>
+      <span class="view-label">Show</span>
+      <button type="button" data-view="office" aria-pressed="true">Office</button>
+      <button type="button" data-view="map">Pipeline</button>
+    </div>
+    <div class="replay" id="replay" hidden>
+      <button type="button" class="primary" id="play">Replay</button>
+      <div class="speeds" role="group" aria-label="Playback speed" id="speeds">
+        <button type="button" data-speed="1" aria-pressed="true">1×</button>
+        <button type="button" data-speed="2">2×</button>
+        <button type="button" data-speed="3">3×</button>
+        <button type="button" data-speed="5">5×</button>
+        <button type="button" data-speed="10">10×</button>
+        <button type="button" data-speed="20">20×</button>
+      </div>
+      <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position in the run">
+      <span id="replay-clock">0:00</span>
+    </div>
+  </div>
+</header>
+<section class="map">
+  <canvas id="office" aria-label="The crew at work, as a pixel office"></canvas>
+  <svg id="map" role="img" aria-label="Pipeline map" hidden></svg>
+</section>
+<main class="panels">
+  <section class="trace">
+    <div class="trace-head">
+      <div class="panel-head">
+        <h2 id="trace-title">All agents</h2>
+        <button type="button" class="ghost-btn" id="all-agents" hidden>All agents</button>
+      </div>
+      <p class="task" id="trace-task"></p>
+    </div>
+    <div id="trace-body"></div>
+  </section>
+  <section class="report">
+    <div class="report-status" id="report-status">Nothing yet. The report is written on the second assembly pass.</div>
+    <article class="report" id="report"></article>
+    <div class="evidence-box" id="evidence" title="Click to dismiss"></div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="/config.js"></script>
+<script src="/office.js"></script>
+<script>
+(() => {
+  // Where the run server lives. Same origin locally; on the hosted page, config.js names the tunnel
+  // to Eric's machine, and ?api= overrides it (remembered per browser) when the tunnel URL changes.
+  const API = (() => {
+    const param = new URLSearchParams(location.search).get('api');
+    let base = param || window.RESEARCH_API || '';
+    try { if (param) localStorage.setItem('research.api', param); else if (!base) base = localStorage.getItem('research.api') || ''; } catch {}
+    return base.replace(/\/$/, '');
+  })();
+  const goToRun = (runId) => { const q = new URLSearchParams(location.search); q.set('run', runId); location.search = q.toString(); };
+  const STAGES = ['brief', 'research', 'assembly', 'followup', 'assembly-2', 'factcheck', 'report'];
+  const STAGE_LABELS = { brief: 'Brief', research: 'Research', assembly: 'Assembly', followup: 'Follow-up', 'assembly-2': 'Assembly, second pass', factcheck: 'Fact-check', report: 'Report' };
+  const ALL = '*';
+  const FEED_CAP = 400;
+  const laneOf = (agent) => `var(--lane-${agent.stage === 'research' ? agent.id : agent.stage})`;
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  const money = (usd) => `$${usd.toFixed(2)}`;
+  const hostOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
+  const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
+  /* ---------- state ---------- */
+  const freshRun = () => ({
+    brief: null, status: 'idle', model: null, error: null,
+    agents: new Map(), order: [],
+    report: null, claims: [], verdicts: new Map(), counts: null,
+    lastT: 0, lastAt: 0, durationMs: null, costUsd: 0,
+  });
+  const state = { runId: null, selected: ALL, stick: true, ...freshRun() };
+  const allEvents = [];       // every event of this run, in order, for replay
+  let isLive = false;         // an SSE stream that hasn't sent `done` yet
+  let traceSeq = 0;
+  let renderedReportKey = '';
+  // Office hand-offs are decoration for events happening *now*; a backlog (stored run, snapshot
+  // of a live run, seek) rebuilds state silently so a hundred sprites don't set off at once.
+  let rebuilding = false;
+  let backlog = true, lastArrival = 0;
+  let view = 'office';
+  try { view = localStorage.getItem('research.view') || 'office'; } catch {}
+
+  const office = window.Office;
+  if (office) office.init({ canvas: $('office'), getState: () => state, actionOf: (a, d) => actionOf(a, d) });
+
+  const replay = { active: false, playing: false, speed: 1, vt: 0, cursor: 0, last: 0, raf: 0 };
+  const maxT = () => (allEvents.length ? allEvents[allEvents.length - 1].t : 0);
+
+  let renderTimer = 0;
+  const invalidate = () => { if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = 0; render(); }, 60); };
+
+  function resetRun() {
+    Object.assign(state, freshRun());
+    state.selected = ALL; state.stick = true;
+    renderedReportKey = '';
+    $('evidence').innerHTML = '';
+  }
+
+  function ensureAgent(id) {
+    let a = state.agents.get(id);
+    if (!a) {
+      a = { id, stage: 'research', label: id, task: '', dependsOn: [], status: 'queued', startedT: null, endT: null, usage: null, trace: [], searches: 0 };
+      state.agents.set(id, a); state.order.push(id);
+    }
+    return a;
+  }
+  function pushTrace(agentId, entry, t) {
+    const a = ensureAgent(agentId);
+    const last = a.trace[a.trace.length - 1];
+    if (entry.kind === 'text' && last && last.kind === 'text') { last.text += entry.text; return; }
+    const full = { t, seq: traceSeq++, agentId, ...entry };
+    // The pipeline reports an agent finished before it publishes its result; keep "Finished" last.
+    if (last && last.kind === 'done' && entry.kind !== 'done') { a.trace.splice(a.trace.length - 1, 0, full); return; }
+    a.trace.push(full);
+  }
+
+  function apply(ev) {
+    state.lastT = ev.t; state.lastAt = Date.now();
+    switch (ev.type) {
+      case 'run.started': state.runId = ev.runId; state.brief = ev.brief; state.model = ev.model; state.status = 'running'; break;
+      case 'run.completed': state.status = 'completed'; state.durationMs = ev.durationMs; state.costUsd = ev.costUsd; break;
+      case 'run.failed': state.status = 'failed'; state.error = ev.error; break;
+      case 'agent.queued': { const a = ensureAgent(ev.agent.id); Object.assign(a, ev.agent); break; }
+      case 'agent.started': { const a = ensureAgent(ev.agentId); a.status = 'running'; a.startedT = ev.t; break; }
+      case 'agent.thinking': pushTrace(ev.agentId, { kind: 'thinking', text: ev.text }, ev.t); break;
+      case 'agent.text': pushTrace(ev.agentId, { kind: 'text', text: ev.text }, ev.t); break;
+      case 'agent.search': { const a = ensureAgent(ev.agentId); a.searches += 1; pushTrace(ev.agentId, { kind: 'search', query: ev.query, results: null }, ev.t); break; }
+      case 'agent.search.results': {
+        const a = ensureAgent(ev.agentId);
+        const open = [...a.trace].reverse().find((e) => e.kind === 'search' && e.results === null && e.query === ev.query)
+          || [...a.trace].reverse().find((e) => e.kind === 'search' && e.results === null);
+        if (open) open.results = ev.results; else pushTrace(ev.agentId, { kind: 'search', query: ev.query, results: ev.results }, ev.t);
+        break;
+      }
+      case 'agent.fetch': pushTrace(ev.agentId, { kind: 'fetch', url: ev.url }, ev.t); break;
+      case 'agent.completed': { const a = ensureAgent(ev.agentId); a.status = 'completed'; a.endT = ev.t; a.usage = ev.usage; if (a.stage !== 'brief' && a.stage !== 'report') pushTrace(ev.agentId, { kind: 'done', durationMs: ev.durationMs, usage: ev.usage }, ev.t); break; }
+      case 'agent.failed': { const a = ensureAgent(ev.agentId); a.status = 'failed'; a.endT = ev.t; pushTrace(ev.agentId, { kind: 'failed', error: ev.error }, ev.t); break; }
+      case 'findings': pushTrace(ev.agentId, { kind: 'findings', headline: ev.headline, findings: ev.findings }, ev.t); break;
+      case 'assembly.result': pushTrace('assembly', { kind: 'assembly', summary: ev.summary, contradictions: ev.contradictions, gaps: ev.gaps }, ev.t); break;
+      case 'followup.answer': pushTrace(ev.agentId, { kind: 'answer', answer: ev.answer, findings: ev.findings }, ev.t); break;
+      case 'report.draft': state.report = ev.markdown; state.claims = ev.claims; break;
+      case 'factcheck.verdicts': state.verdicts = new Map(ev.verdicts.map((v) => [v.id, v])); pushTrace('factcheck', { kind: 'verdicts', verdicts: ev.verdicts }, ev.t); break;
+      case 'report.final': state.report = ev.markdown; state.counts = { supported: ev.supported, unsupported: ev.unsupported, contradicted: ev.contradicted }; break;
+    }
+    if (office && !rebuilding && !(backlog && !replay.active)) {
+      office.onEvent(ev);
+      if (ev.type === 'agent.queued') office.onQueued(ev.agent.id);
+    }
+  }
+  function receive(ev) {
+    const now = performance.now();
+    // A burst of messages with no real-time gap is history being replayed to us, not the run happening.
+    if (backlog && lastArrival && now - lastArrival > 400) backlog = false;
+    lastArrival = now;
+    allEvents.push(ev); if (!replay.active) apply(ev); invalidate();
+  }
+
+  /* What an agent is doing right now, from its latest trace entry. */
+  function actionOf(a, detailed) {
+    if (a.status !== 'running') return '';
+    const e = a.trace[a.trace.length - 1];
+    if (!e) return 'starting';
+    switch (e.kind) {
+      case 'search': return e.results === null ? (detailed ? `searching “${clip(e.query, 48)}”` : 'searching') : (detailed ? `reading results for “${clip(e.query, 40)}”` : 'reading results');
+      case 'fetch': return detailed ? `reading a page on ${hostOf(e.url)}` : 'reading a page';
+      case 'thinking': return 'thinking';
+      case 'text': return a.stage === 'research' || a.stage === 'followup' ? 'writing' : 'writing';
+      default: return 'working';
+    }
+  }
+
+  /* ---------- replay ---------- */
+  function startReplay() {
+    resetRun(); office?.reset();
+    replay.active = true; replay.vt = 0; replay.cursor = 0; replay.playing = true; replay.last = performance.now();
+    cancelAnimationFrame(replay.raf);
+    replay.raf = requestAnimationFrame(tick);
+    invalidate();
+  }
+  function drain() {
+    while (replay.cursor < allEvents.length && allEvents[replay.cursor].t <= replay.vt) apply(allEvents[replay.cursor++]);
+  }
+  function tick(now) {
+    if (!replay.playing) return;
+    replay.vt += (now - replay.last) * replay.speed; replay.last = now;
+    drain();
+    if (replay.cursor >= allEvents.length && !isLive) { replay.vt = maxT(); replay.playing = false; }
+    else replay.raf = requestAnimationFrame(tick);
+    invalidate();
+  }
+  function seek(t) {
+    resetRun(); office?.reset();
+    replay.active = true; replay.vt = t; replay.cursor = 0; replay.last = performance.now();
+    rebuilding = true; drain(); rebuilding = false;
+    if (replay.playing) { cancelAnimationFrame(replay.raf); replay.raf = requestAnimationFrame(tick); }
+    invalidate();
+  }
+  function stopReplay() {
+    replay.playing = false; replay.active = false; cancelAnimationFrame(replay.raf);
+    resetRun(); office?.reset();
+    rebuilding = true; for (const ev of allEvents) apply(ev); rebuilding = false;
+    invalidate();
+  }
+  function setView(v) {
+    view = v;
+    try { localStorage.setItem('research.view', v); } catch {}
+    $('view-toggle').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
+    invalidate();
+  }
+  $('view-toggle').addEventListener('click', (e) => { const b = e.target.closest('button[data-view]'); if (b) setView(b.dataset.view); });
+  $('play').addEventListener('click', () => {
+    if (!replay.active || replay.cursor >= allEvents.length) { startReplay(); return; }
+    replay.playing = !replay.playing;
+    if (replay.playing) { replay.last = performance.now(); replay.raf = requestAnimationFrame(tick); }
+    invalidate();
+  });
+  $('speeds').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-speed]'); if (!b) return;
+    replay.speed = Number(b.dataset.speed);
+    $('speeds').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    if (!replay.active) startReplay();
+  });
+  $('scrub').addEventListener('input', (e) => { seek((Number(e.target.value) / 1000) * maxT()); });
+
+  /* ---------- header ---------- */
+  function renderHeader() {
+    const hero = $('hero');
+    if (state.brief) {
+      hero.innerHTML = `<p class="brief">${esc(state.brief)}</p>`;
+    } else if (!hero.querySelector('form') && !state.runId && !allEvents.length) {
+      hero.innerHTML = `
+        <form class="new-brief">
+          <textarea name="brief" placeholder="The question, in the brand's own words. For example: we are a magnesium brand selling in the UK and EU; retention after the first order is falling and we want to know why." required></textarea>
+          <div class="row"><button type="submit">Start research</button><span>Three analysts, then assembly, follow-ups and a fact-check. Ten to fifteen minutes.</span><span class="form-error"></span></div>
+        </form>`;
+      hero.querySelector('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.currentTarget; const btn = form.querySelector('button'); const err = form.querySelector('.form-error');
+        btn.disabled = true; err.textContent = '';
+        try {
+          const res = await fetch(`${API}/api/runs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ brief: form.brief.value }) });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not start the run.');
+          goToRun(data.runId);
+        } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+      });
+    }
+    const live = $('live');
+    live.className = `live ${state.status}`;
+    live.hidden = state.status === 'idle';
+    const hasRun = !!state.runId || replay.active;
+    document.querySelector('.map').hidden = !hasRun;
+    const officeOn = hasRun && view === 'office' && !!office;
+    $('office').hidden = !officeOn;
+    // SVG elements have no `hidden` property; the attribute is what the CSS keys on.
+    $('map').toggleAttribute('hidden', officeOn);
+    $('view-toggle').hidden = !hasRun || !office;
+    $('view-toggle').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+    office?.setVisible(officeOn);
+    let elapsed = 0;
+    if (replay.active) elapsed = Math.min(replay.vt, maxT());
+    else if (state.status === 'running') elapsed = state.lastT + (Date.now() - state.lastAt);
+    else if (state.status === 'completed') elapsed = state.durationMs ?? state.lastT;
+    else elapsed = state.lastT;
+    $('clock').textContent = state.status === 'idle' ? '' : mmss(elapsed);
+    $('clock').title = state.model ? `Model: ${state.model}` : '';
+    const spent = state.status === 'completed' ? state.costUsd : [...state.agents.values()].reduce((s, a) => s + (a.usage?.costUsd || 0), 0);
+    $('cost').textContent = spent > 0 ? money(spent) : '';
+    $('new-link').hidden = !state.runId;
+
+    const finished = allEvents.length > 0 && !isLive;
+    $('replay').hidden = !finished;
+    if (finished) {
+      const atEnd = replay.cursor >= allEvents.length;
+      $('play').textContent = !replay.active ? 'Replay' : replay.playing ? 'Pause' : atEnd ? 'Replay again' : 'Resume';
+      $('play').classList.toggle('primary', !replay.active || atEnd);
+      $('scrub').value = String(replay.active && maxT() ? Math.round((Math.min(replay.vt, maxT()) / maxT()) * 1000) : 1000);
+      $('replay-clock').textContent = `${mmss(replay.active ? Math.min(replay.vt, maxT()) : maxT())} of ${mmss(maxT())}`;
+    }
+  }
+
+  /* ---------- map ---------- */
+  const NODE_R = 14, COL_W = 208, ROW_H = 84, TOP = 50;
+  function renderMap() {
+    const svg = $('map');
+    const byStage = new Map(STAGES.map((s) => [s, []]));
+    for (const id of state.order) { const a = state.agents.get(id); if (byStage.has(a.stage)) byStage.get(a.stage).push(a); }
+    const assembly = state.agents.get('assembly');
+    const ghostFollowup = byStage.get('followup').length === 0;
+    const rows = Math.max(3, ...[...byStage.values()].map((l) => l.length));
+    const width = STAGES.length * COL_W, height = TOP + rows * ROW_H + 52;
+    const pos = new Map();
+    STAGES.forEach((stage, ci) => {
+      const list = byStage.get(stage);
+      const n = ghostFollowup && stage === 'followup' ? 1 : list.length;
+      const cx = ci * COL_W + COL_W / 2;
+      const cy = (i) => TOP + (rows * ROW_H) / 2 + (i - (n - 1) / 2) * ROW_H;
+      list.forEach((a, i) => pos.set(a.id, { x: cx, y: cy(i) }));
+      if (ghostFollowup && stage === 'followup') pos.set('__ghost', { x: cx, y: cy(0) });
+    });
+
+    let edges = '', nodes = '', heads = '';
+    STAGES.forEach((stage, ci) => { heads += `<text class="stage" x="${ci * COL_W + COL_W / 2}" y="20" text-anchor="middle">${esc(STAGE_LABELS[stage])}</text>`; });
+
+    const edge = (from, to, lane, cls) => {
+      const a = pos.get(from), b = pos.get(to); if (!a || !b) return '';
+      const x1 = a.x + NODE_R + 3, x2 = b.x - NODE_R - 3, mx = (x1 + x2) / 2;
+      return `<path class="edge ${cls}" d="M${x1},${a.y} C${mx},${a.y} ${mx},${b.y} ${x2},${b.y}" style="stroke:${lane}"/>`;
+    };
+    for (const id of state.order) {
+      const a = state.agents.get(id);
+      const cls = a.status === 'running' ? 'flow' : a.status === 'completed' ? 'done' : '';
+      for (const dep of a.dependsOn) edges += edge(dep, a.id, laneOf(a), cls);
+    }
+    if (ghostFollowup && assembly) {
+      edges += edge('assembly', '__ghost', 'var(--lane-followup)', assembly.status === 'completed' ? 'done' : '');
+      const a2 = state.agents.get('assembly-2');
+      if (a2) edges += edge('__ghost', 'assembly-2', 'var(--lane-assembly)', a2.status === 'running' ? 'flow' : a2.status === 'completed' ? 'done' : '');
+    }
+
+    const subOf = (a) => {
+      if (a.stage === 'brief') return '';
+      if (a.stage === 'report') return a.status === 'completed' ? 'ready' : 'waiting';
+      if (a.status === 'running') { const act = actionOf(a); return a.searches ? `${act} (${a.searches} search${a.searches === 1 ? '' : 'es'})` : act; }
+      if (a.status === 'completed') return a.endT != null && a.startedT != null ? mmss(a.endT - a.startedT) : '';
+      if (a.status === 'failed') return 'failed';
+      return 'waiting';
+    };
+    for (const id of state.order) {
+      const a = state.agents.get(id), p = pos.get(id); if (!p) continue;
+      const lane = laneOf(a);
+      nodes += `<g class="node ${a.status} ${state.selected === id ? 'selected' : ''}" data-id="${esc(id)}" tabindex="0" role="button" aria-label="${esc(a.label)}: ${esc(a.status)}" style="--lane:${lane}">
+        <circle class="ring" cx="${p.x}" cy="${p.y}" r="${NODE_R}" style="stroke:${lane}"/>
+        <circle class="halo" cx="${p.x}" cy="${p.y}" r="${NODE_R + 6}"/>
+        <circle class="core" cx="${p.x}" cy="${p.y}" r="${NODE_R}" style="stroke:${lane}"/>
+        <path class="tick" d="M${p.x - 5.5},${p.y + 0.5} L${p.x - 1.5},${p.y + 4.5} L${p.x + 6},${p.y - 4.5}"/>
+        <path class="cross" d="M${p.x - 5},${p.y - 5} L${p.x + 5},${p.y + 5} M${p.x + 5},${p.y - 5} L${p.x - 5},${p.y + 5}"/>
+        <text class="label" x="${p.x}" y="${p.y + 33}" text-anchor="middle">${esc(a.label)}</text>
+        <text class="sub" x="${p.x}" y="${p.y + 50}" text-anchor="middle">${esc(subOf(a))}</text>
+      </g>`;
+    }
+    if (ghostFollowup) {
+      const p = pos.get('__ghost');
+      const sub = !assembly || assembly.status !== 'completed' ? 'decided by assembly' : 'no gaps found';
+      nodes += `<g class="node ghost" aria-hidden="true">
+        <circle class="core" cx="${p.x}" cy="${p.y}" r="${NODE_R}"/>
+        <text class="label" x="${p.x}" y="${p.y + 33}" text-anchor="middle">Follow-ups</text>
+        <text class="sub" x="${p.x}" y="${p.y + 50}" text-anchor="middle">${sub}</text>
+      </g>`;
+    }
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.innerHTML = heads + edges + nodes;
+  }
+  $('map').addEventListener('click', (e) => { const g = e.target.closest('.node[data-id]'); if (g) select(g.dataset.id); });
+  $('map').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { const g = e.target.closest('.node[data-id]'); if (g) { e.preventDefault(); select(g.dataset.id); } } });
+  function select(id) { state.selected = state.selected === id ? ALL : id; state.stick = true; invalidate(); }
+  $('all-agents').addEventListener('click', () => select(ALL));
+
+  /* ---------- trace ---------- */
+  function renderTrace() {
+    const body = $('trace-body');
+    const panel = body.closest('section');
+    const nearBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 80;
+    const all = state.selected === ALL;
+    $('all-agents').hidden = all;
+    let entries;
+    if (all) {
+      $('trace-title').textContent = 'All agents';
+      $('trace-task').textContent = state.runId ? 'Everything the crew is doing, in the order it happened.' : '';
+      entries = [];
+      for (const id of state.order) { const a = state.agents.get(id); if (a.stage !== 'brief' && a.stage !== 'report') entries.push(...a.trace); }
+      entries.sort((x, y) => x.t - y.t || x.seq - y.seq);
+      if (!state.runId) { body.innerHTML = '<p class="empty">Start a brief above, or pick a past run.</p>'; return; }
+      if (entries.length === 0) { body.innerHTML = '<p class="empty">The crew is starting.</p>'; return; }
+    } else {
+      const a = state.agents.get(state.selected);
+      if (!a) { state.selected = ALL; return renderTrace(); }
+      $('trace-title').innerHTML = `<span class="swatch" style="background:${laneOf(a)}"></span>${titleOf(a)}`;
+      $('trace-task').textContent = a.task;
+      if (a.stage === 'brief') { body.innerHTML = `<p class="empty">${esc(state.brief)}</p>`; return; }
+      if (a.stage === 'report') { body.innerHTML = `<p class="empty">${a.status === 'completed' ? 'The report is on the right. Click a numbered claim to see what the fact-checker found.' : 'The report appears on the right when the fact-check is done.'}</p>`; return; }
+      if (a.trace.length === 0) {
+        body.innerHTML = `<p class="empty">${a.status === 'queued' ? `Waiting on ${a.dependsOn.map((d) => state.agents.get(d)?.label || d).join(', ') || 'the run'}.` : a.status === 'running' ? 'Starting.' : 'Nothing to show.'}</p>`;
+        return;
+      }
+      entries = a.trace;
+    }
+    const shown = entries.length > FEED_CAP ? entries.slice(-FEED_CAP) : entries;
+    const items = shown.map((e) => {
+      const a = state.agents.get(e.agentId);
+      const who = all && a ? `<div class="who" style="--lane:${laneOf(a)}">${esc(a.label)}</div>` : '';
+      return `<li><time>${mmss(e.t)}</time><div class="entry ${e.kind}">${who}<div class="body">${entryHtml(e)}</div></div></li>`;
+    }).join('');
+    const hidden = entries.length - shown.length;
+    body.innerHTML = `${hidden > 0 ? `<p class="empty" style="margin:8px 0">${hidden} earlier entries not shown. Pick an agent on the map to read its full trace.</p>` : ''}<ol class="trace-list">${items}</ol>`;
+    if (state.stick && nearBottom && (state.status === 'running')) panel.scrollTop = panel.scrollHeight;
+  }
+  function titleOf(a) {
+    const stage = STAGE_LABELS[a.stage];
+    if (a.stage === 'followup' || stage === a.label) return esc(a.label);
+    if (stage.startsWith(a.label)) return esc(stage);
+    return `${esc(a.label)} <span style="color:var(--dim);font-weight:400">${esc(stage)}</span>`;
+  }
+  const findingsHtml = (list) => list.length ? `<ul class="findings">${list.map((f) => `<li><span class="conf ${esc(f.confidence)}" title="${esc(f.confidence)} confidence"></span><div>${esc(f.claim)}<div class="evidence">${esc(f.evidence)}${f.sources?.length ? ' ' + f.sources.map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>`).join(', ') : ''}</div></div></li>`).join('')}</ul>` : '';
+  function entryHtml(e) {
+    switch (e.kind) {
+      case 'thinking': return esc(e.text);
+      case 'text': return esc(e.text.trim());
+      case 'search': {
+        const res = e.results === null ? '<div class="none">searching</div>'
+          : e.results.length === 0 ? '<div class="none">nothing useful came back</div>'
+          : `<ul>${e.results.slice(0, 6).map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a></li>`).join('')}${e.results.length > 6 ? `<li>and ${e.results.length - 6} more</li>` : ''}</ul>`;
+        return `<div class="q">Searched “${esc(e.query)}”</div>${res}`;
+      }
+      case 'fetch': return `Read a page on <a href="${esc(e.url)}" target="_blank" rel="noopener" title="${esc(e.url)}">${esc(hostOf(e.url))}</a>`;
+      case 'findings': return `<div class="headline">${esc(e.headline)}</div>${findingsHtml(e.findings)}`;
+      case 'answer': return `<div class="headline">${esc(e.answer)}</div>${findingsHtml(e.findings)}`;
+      case 'assembly': {
+        const contra = e.contradictions.length ? `<div class="contra"><div class="headline">${e.contradictions.length} contradiction${e.contradictions.length === 1 ? '' : 's'}</div>${e.contradictions.map((c) => `<p><strong>${esc(c.topic)}.</strong> ${esc(c.first.agent)} says “${esc(c.first.claim)}”; ${esc(c.second.agent)} says “${esc(c.second.claim)}”.</p>`).join('')}</div>` : '<div class="contra"><div class="headline">No contradictions</div></div>';
+        const gaps = e.gaps.length ? `<div class="gaps"><div class="headline">${e.gaps.length} gap${e.gaps.length === 1 ? '' : 's'} to follow up</div><ol>${e.gaps.map((g) => `<li>${esc(g.question)}<div class="why">${esc(g.why)}</div></li>`).join('')}</ol></div>` : '<div class="gaps"><div class="headline">No gaps worth a follow-up</div></div>';
+        return `<div>${esc(e.summary)}</div><br>${contra}<br>${gaps}`;
+      }
+      case 'verdicts': return `<ul class="verdict-list">${e.verdicts.map((v) => `<li><span class="pill ${esc(v.verdict)}">${esc(v.id)} ${esc(v.verdict)}</span><div>${esc(v.evidence)}${v.source_url ? ` <a href="${esc(v.source_url)}" target="_blank" rel="noopener" style="color:var(--muted)">source</a>` : ''}</div></li>`).join('')}</ul>`;
+      case 'done': return e.usage.turns ? `Finished in ${mmss(e.durationMs)}, ${e.usage.turns} turn${e.usage.turns === 1 ? '' : 's'}, ${money(e.usage.costUsd)}` : `Finished in ${mmss(e.durationMs)}`;
+      case 'failed': return `Failed: ${esc(e.error)}`;
+      default: return '';
+    }
+  }
+
+  /* ---------- report ---------- */
+  function renderReport() {
+    const status = $('report-status');
+    if (!state.report) {
+      const running = [...state.agents.values()].filter((a) => a.status === 'running' && a.stage !== 'brief');
+      if (state.status === 'idle') status.textContent = 'Nothing yet. The report is written on the second assembly pass.';
+      else if (state.status === 'failed') status.textContent = `The run stopped: ${state.error || 'unknown error'}`;
+      else if (running.length) {
+        status.innerHTML = `<ul class="now-list">${running.map((a) => `<li><span class="who" style="--lane:${laneOf(a)}">${esc(a.label)}</span><span class="what">${esc(actionOf(a, true))}</span></li>`).join('')}</ul>`;
+      } else status.textContent = 'Waiting for the next stage.';
+      $('report').innerHTML = ''; renderedReportKey = ''; return;
+    }
+    if (state.counts) {
+      const c = state.counts;
+      status.innerHTML = `<span>${state.claims.length} claims checked</span><span class="pill supported">${c.supported} supported</span><span class="pill unsupported">${c.unsupported} unsupported</span>${c.contradicted ? `<span class="pill contradicted">${c.contradicted} contradicted</span>` : ''}`;
+    } else {
+      status.textContent = `Draft written. Fact-check is going through ${state.claims.length} claims.`;
+    }
+    const key = `${state.report.length}:${state.verdicts.size}`;
+    if (key === renderedReportKey) return;
+    renderedReportKey = key;
+    let html;
+    try { html = window.marked ? marked.parse(state.report) : `<pre>${esc(state.report)}</pre>`; } catch { html = `<pre>${esc(state.report)}</pre>`; }
+    html = html.replace(/\[(c\d+)\]/g, (_, id) => {
+      const v = state.verdicts.get(id);
+      return `<span class="claim ${v ? esc(v.verdict) : ''}" data-claim="${esc(id)}" role="button" tabindex="0" title="${v ? esc(v.verdict) : 'checking'}">${esc(id.slice(1))}</span>`;
+    });
+    $('report').innerHTML = html;
+    $('evidence').innerHTML = '';
+  }
+  function showEvidence(id) {
+    const v = state.verdicts.get(id); const claim = state.claims.find((c) => c.id === id);
+    $('report').querySelectorAll('.claim.active').forEach((el) => el.classList.remove('active'));
+    $('report').querySelectorAll(`.claim[data-claim="${id}"]`).forEach((el) => el.classList.add('active'));
+    if (!v) { $('evidence').innerHTML = `<div>${esc(claim?.text || id)}</div><div class="src">Not checked yet.</div>`; return; }
+    $('evidence').innerHTML = `<div><span class="pill ${esc(v.verdict)}">${esc(v.verdict)}</span> ${esc(claim?.text || '')}</div><div class="src" style="margin-top:6px">${esc(v.evidence)}${v.source_url ? ` <a href="${esc(v.source_url)}" target="_blank" rel="noopener">${esc(v.source_url)}</a>` : ''}</div>`;
+  }
+  $('report').addEventListener('click', (e) => { const el = e.target.closest('.claim'); if (el) showEvidence(el.dataset.claim); });
+  $('report').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { const el = e.target.closest('.claim'); if (el) { e.preventDefault(); showEvidence(el.dataset.claim); } } });
+  $('evidence').addEventListener('click', () => { $('evidence').innerHTML = ''; $('report').querySelectorAll('.claim.active').forEach((el) => el.classList.remove('active')); });
+
+  function render() { renderHeader(); renderMap(); renderTrace(); renderReport(); }
+  setInterval(() => { if (state.status === 'running' && !replay.active) renderHeader(); }, 1000);
+
+  /* ---------- runs & stream ---------- */
+  async function loadRuns(current) {
+    const sel = $('runs');
+    try {
+      const runs = await (await fetch(`${API}/api/runs`)).json();
+      sel.innerHTML = `<option value="">${runs.length ? 'Past runs' : 'No runs yet'}</option>` + runs.map((r) => `<option value="${esc(r.runId)}" ${r.runId === current ? 'selected' : ''}>${esc(r.brief.slice(0, 60))}${r.brief.length > 60 ? '…' : ''} (${r.status})</option>`).join('');
+      if (current && !runs.some((r) => r.runId === current)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(current)}" selected>${esc(current)}</option>`);
+    } catch { sel.innerHTML = '<option value="">Runs unavailable</option>'; }
+  }
+  $('runs').addEventListener('change', (e) => { if (e.target.value) goToRun(e.target.value); });
+  if (API) {
+    const q = new URLSearchParams(location.search); q.delete('run');
+    $('new-link').href = `/?${q.toString()}`.replace(/\?$/, '');
+    $('cost').insertAdjacentHTML('afterend', `<span title="${esc(API)}" style="color:var(--dim)">via ${esc(new URL(API).hostname)}</span>`);
+  }
+
+  function connect(runId) {
+    isLive = true;
+    const es = new EventSource(`${API}/api/runs/${encodeURIComponent(runId)}/events`);
+    es.onmessage = (m) => { try { receive(JSON.parse(m.data)); } catch (err) { console.error(err); } };
+    es.addEventListener('done', () => { isLive = false; es.close(); invalidate(); });
+    es.onerror = () => { if (state.status !== 'running') { isLive = false; es.close(); invalidate(); } };
+  }
+
+  const runId = new URLSearchParams(location.search).get('run');
+  loadRuns(runId);
+  if (runId) connect(runId);
+  render();
+})();
+</script>
+</body>
+</html>
