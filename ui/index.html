@@ -41,7 +41,7 @@
     line-height: 1.45;
     font-variant-numeric: tabular-nums;
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     height: 100vh;
     overflow: hidden;
   }
@@ -109,33 +109,62 @@
   .replay input[type="range"] { width: 220px; accent-color: var(--live); }
   #replay-clock { min-width: 5ch; text-align: right; color: var(--text); }
 
-  /* New-brief form, shown only when nothing is selected */
-  form.new-brief { display: grid; gap: 10px; max-width: 720px; }
-  form.new-brief textarea {
-    width: 100%;
-    min-height: 92px;
-    resize: vertical;
+  .brief.placeholder { color: var(--muted); font-weight: 400; }
+  .status button.link { background: none; border: 0; padding: 0; color: var(--muted); border-bottom: 1px solid var(--line); cursor: pointer; }
+  .status button.link:hover { color: var(--text); }
+
+  /* The composer: where a new brief is written. Opens from "New brief"; open by default when there are no runs yet. */
+  .composer { padding: 4px 32px 14px; }
+  .composer form {
+    max-width: 880px;
     background: var(--ink-2);
     border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 12px 14px;
-    font-size: 18px;
-    line-height: 1.35;
+    border-radius: 12px;
+    padding: 6px 6px 10px 18px;
+    transition: border-color .15s;
   }
-  form.new-brief textarea::placeholder { color: var(--dim); }
-  form.new-brief .row { display: flex; gap: 12px; align-items: center; color: var(--muted); }
-  form.new-brief button {
+  .composer form:focus-within { border-color: var(--live); }
+  .composer textarea {
+    display: block;
+    width: 100%;
+    min-height: 74px;
+    resize: none;
+    background: transparent;
+    border: 0;
+    padding: 12px 12px 8px 0;
+    font-size: 19px;
+    line-height: 1.35;
+    color: var(--text);
+  }
+  .composer textarea:focus { outline: none; }
+  .composer textarea::placeholder { color: var(--dim); }
+  .composer-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-right: 4px; }
+  .examples { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--dim); font-size: 13px; }
+  .examples button {
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 10px;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .examples button:hover { color: var(--text); border-color: var(--muted); }
+  .composer-actions { display: flex; align-items: center; gap: 12px; }
+  .composer .note { color: var(--dim); font-size: 13px; }
+  .composer button.start {
     white-space: nowrap;
     background: var(--text);
     color: var(--ink);
     border: 0;
     border-radius: 8px;
-    padding: 9px 16px;
+    padding: 8px 16px;
     font-weight: 600;
     cursor: pointer;
   }
-  form.new-brief button:disabled { opacity: .5; cursor: default; }
-  .form-error { color: var(--bad); }
+  .composer button.start:disabled { opacity: .5; cursor: default; }
+  .form-error { color: var(--bad); font-size: 14px; padding: 6px 0 0; }
+  .form-error:empty { display: none; }
 
   .map { padding: 4px 16px 0; overflow-x: auto; position: relative; }
   .map svg { display: block; width: 100%; min-width: 1040px; height: auto; }
@@ -318,7 +347,7 @@
       <span class="live" id="live"><span class="live-dot"></span><span id="clock">0:00</span></span>
       <span id="cost"></span>
       <select id="runs" aria-label="Run"></select>
-      <a href="/" id="new-link">New brief</a>
+      <button type="button" class="link" id="new-brief">New brief</button>
     </div>
     <div class="view-toggle" role="group" aria-label="View" id="view-toggle" hidden>
       <span class="view-label">Show</span>
@@ -340,6 +369,25 @@
     </div>
   </div>
 </header>
+<section class="composer" id="composer" hidden>
+  <form id="composer-form">
+    <textarea name="brief" rows="3" placeholder="The question, in the brand's own words. Who you are, where you sell, and what you want to know." required></textarea>
+    <div class="composer-row">
+      <div class="examples" id="examples">
+        <span>Try one</span>
+        <button type="button">Magnesium brand, UK/EU: why is retention after order one falling?</button>
+        <button type="button">UK coffee subscription launching in Germany</button>
+        <button type="button">Protein powder on Shopify vs Amazon Subscribe &amp; Save</button>
+      </div>
+      <div class="composer-actions">
+        <span class="note">Ten to fifteen minutes, about $20.</span>
+        <button type="button" class="ghost-btn" id="composer-cancel">Cancel</button>
+        <button type="submit" class="start">Start research</button>
+      </div>
+    </div>
+    <div class="form-error" id="composer-error"></div>
+  </form>
+</section>
 <section class="map">
   <canvas id="office" aria-label="The crew at work, as a pixel office"></canvas>
   <svg id="map" role="img" aria-label="Pipeline map" hidden></svg>
@@ -551,33 +599,51 @@
   $('scrub').addEventListener('input', (e) => { seek((Number(e.target.value) / 1000) * maxT()); });
 
   /* ---------- header ---------- */
+  /* ---------- composer ---------- */
+  const EXAMPLES = [
+    "We are a magnesium brand that primarily operates in the UK/EU market. Our retention after order 1 has been declining and we want to know why?",
+    "We're a UK specialty coffee subscription brand, about 40,000 active subscribers paying around £18 a month, and we plan to launch in Germany in Q1 2027. What do German consumers expect from a coffee subscription, who would we be competing with and how do they price and keep customers, and what regulation or logistics could trip us up?",
+    "We sell a $45-a-month protein powder subscription on Shopify in the US. Amazon Subscribe & Save just cut prices across our category. Should we match, what are the other DTC brands doing, and what do subscribers actually switch for?",
+  ];
+  let composerOpen = false, noRunsYet = false;
+  function openComposer(open) {
+    composerOpen = open;
+    $('composer').hidden = !open;
+    $('new-brief').textContent = open && !noRunsYet ? 'Close' : 'New brief';
+    if (open) $('composer-form').brief.focus();
+    invalidate();
+  }
+  $('new-brief').addEventListener('click', () => openComposer(!composerOpen));
+  $('composer-cancel').addEventListener('click', () => openComposer(false));
+  $('examples').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const i = [...$('examples').querySelectorAll('button')].indexOf(b);
+    const ta = $('composer-form').brief; ta.value = EXAMPLES[i] || ''; ta.focus();
+  });
+  $('composer-form').addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); $('composer-form').requestSubmit(); } });
+  $('composer-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget; const btn = form.querySelector('button.start'); const err = $('composer-error');
+    btn.disabled = true; err.textContent = '';
+    try {
+      const res = await fetch(`${API}/api/runs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ brief: form.brief.value }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not start the run.');
+      goToRun(data.runId);
+    } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+  });
+
   function renderHeader() {
     const hero = $('hero');
-    if (state.brief) {
-      hero.innerHTML = `<p class="brief">${esc(state.brief)}</p>`;
-    } else if (!hero.querySelector('form') && !state.runId && !allEvents.length) {
-      hero.innerHTML = `
-        <form class="new-brief">
-          <textarea name="brief" placeholder="The question, in the brand's own words. For example: we are a magnesium brand selling in the UK and EU; retention after the first order is falling and we want to know why." required></textarea>
-          <div class="row"><button type="submit">Start research</button><span>Three analysts, then assembly, follow-ups and a fact-check. Ten to fifteen minutes.</span><span class="form-error"></span></div>
-        </form>`;
-      hero.querySelector('form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.currentTarget; const btn = form.querySelector('button'); const err = form.querySelector('.form-error');
-        btn.disabled = true; err.textContent = '';
-        try {
-          const res = await fetch(`${API}/api/runs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ brief: form.brief.value }) });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Could not start the run.');
-          goToRun(data.runId);
-        } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
-      });
-    }
+    if (state.brief) hero.innerHTML = `<p class="brief">${esc(state.brief)}</p>`;
+    else hero.innerHTML = `<p class="brief placeholder">${noRunsYet ? 'Give the crew its first brief.' : 'Pick a run, or write a new brief.'}</p>`;
+    $('composer-cancel').hidden = noRunsYet;
     const live = $('live');
     live.className = `live ${state.status}`;
     live.hidden = state.status === 'idle';
     const hasRun = !!state.runId || replay.active;
-    document.querySelector('.map').hidden = !hasRun;
+    // Writing a brief takes the room's place; the trace and report stay for reference.
+    document.querySelector('.map').hidden = !hasRun || composerOpen;
     const officeOn = hasRun && view === 'office' && !!office;
     $('office').hidden = !officeOn;
     // SVG elements have no `hidden` property; the attribute is what the CSS keys on.
@@ -594,7 +660,6 @@
     $('clock').title = state.model ? `Model: ${state.model}` : '';
     const spent = state.status === 'completed' ? state.costUsd : [...state.agents.values()].reduce((s, a) => s + (a.usage?.costUsd || 0), 0);
     $('cost').textContent = spent > 0 ? money(spent) : '';
-    $('new-link').hidden = !state.runId;
 
     const finished = allEvents.length > 0 && !isLive;
     $('replay').hidden = !finished;
@@ -802,18 +867,16 @@
   /* ---------- runs & stream ---------- */
   async function loadRuns(current) {
     const sel = $('runs');
+    let runs = [];
     try {
-      const runs = await (await fetch(`${API}/api/runs`)).json();
+      runs = await (await fetch(`${API}/api/runs`)).json();
       sel.innerHTML = `<option value="">${runs.length ? 'Past runs' : 'No runs yet'}</option>` + runs.map((r) => `<option value="${esc(r.runId)}" ${r.runId === current ? 'selected' : ''}>${esc(r.brief.slice(0, 60))}${r.brief.length > 60 ? '…' : ''} (${r.status})</option>`).join('');
       if (current && !runs.some((r) => r.runId === current)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(current)}" selected>${esc(current)}</option>`);
     } catch { sel.innerHTML = '<option value="">Runs unavailable</option>'; }
+    return runs;
   }
   $('runs').addEventListener('change', (e) => { if (e.target.value) goToRun(e.target.value); });
-  if (API) {
-    const q = new URLSearchParams(location.search); q.delete('run');
-    $('new-link').href = `/?${q.toString()}`.replace(/\?$/, '');
-    $('cost').insertAdjacentHTML('afterend', `<span title="${esc(API)}" style="color:var(--dim)">via ${esc(new URL(API).hostname)}</span>`);
-  }
+  if (API) $('cost').insertAdjacentHTML('afterend', `<span title="${esc(API)}" style="color:var(--dim)">via ${esc(new URL(API).hostname)}</span>`);
 
   function connect(runId) {
     isLive = true;
@@ -823,10 +886,21 @@
     es.onerror = () => { if (state.status !== 'running') { isLive = false; es.close(); invalidate(); } };
   }
 
-  const runId = new URLSearchParams(location.search).get('run');
-  loadRuns(runId);
-  if (runId) connect(runId);
-  render();
+  // Open on the run in the URL; with none, on the latest run — the composer is a click away. An
+  // empty install (no runs at all) opens the composer.
+  (async () => {
+    const wanted = new URLSearchParams(location.search).get('run');
+    if (wanted) connect(wanted);
+    render();
+    const runs = await loadRuns(wanted);
+    if (wanted) return;
+    if (runs.length) {
+      const q = new URLSearchParams(location.search); q.set('run', runs[0].runId);
+      history.replaceState(null, '', `?${q.toString()}`);
+      $('runs').value = runs[0].runId;
+      connect(runs[0].runId);
+    } else { noRunsYet = true; openComposer(true); render(); }
+  })();
 })();
 </script>
 </body>
