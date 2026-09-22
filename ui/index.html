@@ -50,11 +50,12 @@
   :focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
   [hidden] { display: none !important; }
 
-  header {
-    display: grid;
-    gap: 10px;
-    padding: 18px 32px 8px;
-  }
+  /* Explicit rows: the composer is display:none most of the time, and without these the panels would
+     slide up into the map's auto row and split the height with it. */
+  header { grid-row: 1; display: grid; gap: 10px; padding: 18px 32px 8px; }
+  .composer { grid-row: 2; }
+  .map { grid-row: 3; }
+  .panels { grid-row: 4; }
   /* Wide and short: the brief runs the full width in two or three lines so the map gets the height. */
   .brief {
     margin: 0;
