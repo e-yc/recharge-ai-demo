@@ -9,20 +9,24 @@
   const T = 16;                        // tile size in logical pixels
   const COLS = 30, ROWS = 13;          // row 0 is the back wall
   const W = COLS * T, H = ROWS * T;
-  const SPEED = 5.5;                   // tiles per second
+  const SPEED = 3.6;                   // tiles per second: a walk, not a sprint
+  const DWELL_MS = 4000;               // nobody leaves a spot they only just reached
 
   const C = {
-    floorA: '#2a3a4d', floorB: '#26364a', rug: '#33455c', rugEdge: '#3c5069',
-    wall: '#1b2a3b', wallTop: '#33455c', wallLine: '#0e1620', window: '#5f8fb3', windowLight: '#8fb8d8', windowFrame: '#243447',
-    wood: '#a8845c', woodDark: '#7d6043', woodEdge: '#5c4532', metal: '#3b4c60', metalDark: '#2b3b4e',
-    monitor: '#0e1620', screenOff: '#1e2b3a', screenOn: '#cfe8ff',
-    paper: '#f4f6f8', paperLine: '#9fb0c2', envelope: '#e8c46b', envelopeDark: '#b8923f',
-    outline: '#0e1620', skin: '#f1c9a5', skinDark: '#c98f6a', hair: '#3b2a22', pants: '#2d3e55', shoe: '#0e1620',
-    bubble: '#f4f6f8', bubbleEdge: '#c7d3de', bad: '#E5695B', ok: '#6FCF97',
-    plant: '#4f9d69', plantDark: '#35774b', pot: '#b3603f', potDark: '#8a4a30',
-    board: '#f4f6f8', boardFrame: '#3b4c60', chair: '#243447', chairDark: '#182636',
-    book1: '#c9625a', book2: '#5f9ed1', book3: '#e0b25c', book4: '#6fbf8a', book5: '#a77be0',
-    coffee: '#4b2e1e', mug: '#e5e9ee',
+    floorA: '#c79a6b', floorB: '#b98a5e', seam: '#a67a52', floorEdge: '#8f6746',
+    rug: '#5e9a94', rugDark: '#4f847f', rugAccent: '#e8a17a', rugEdge: '#e9dcc4',
+    wall: '#efe4cf', wallShade: '#d9c8aa', wallLine: '#b9a583', wallTop: '#f6efe1', baseboard: '#e2d3b5',
+    sky: '#9fd0ea', skyLight: '#d5ecf7', cloud: '#ffffff', windowFrame: '#7a5a3f',
+    wood: '#8b5a3c', woodDark: '#6b4530', woodEdge: '#4f3324', woodLight: '#a26d49', metal: '#5b6b7c', metalDark: '#43505e',
+    monitor: '#2b2f38', screenOff: '#3d4450', screenOn: '#dff1ff',
+    paper: '#fbfbf7', paperLine: '#b5bcc6', envelope: '#f0c85e', envelopeDark: '#c99a33',
+    outline: '#2a1f1a', skin: '#f6d2b0', skinDark: '#d9a27c', blush: '#f0a3a3', hair: '#3b2a22', pants: '#3a4a66', shoe: '#2a1f1a',
+    bubble: '#ffffff', bubbleEdge: '#d9d2c4', bad: '#E5695B', ok: '#5fbf87',
+    plant: '#5fae74', plantDark: '#3f8a58', plantLight: '#8ccf9a', pot: '#c96f4a', potDark: '#9c5236',
+    board: '#fbfbf7', boardFrame: '#6b4530', chair: '#4a5a6e', chairDark: '#36434f', cushion: '#e8a17a',
+    book1: '#d96c5f', book2: '#5f9ed1', book3: '#e6bb5c', book4: '#6fbf8a', book5: '#a77be0', book6: '#f0a3a3',
+    coffee: '#4b2e1e', mug: '#ffffff', couch: '#7a8fb0', couchDark: '#5f7291', couchLight: '#93a6c4',
+    cat: '#3a3a3a', catLight: '#5a5a5a', shadow: 'rgba(80,50,30,.22)',
   };
   const LANE = { macro: '#4DB6C8', trends: '#A77BE0', competitors: '#F0876A', assembly: '#d8e0e8', followup: '#E8C46B', factcheck: '#6FCF97' };
   const shade = (hex, f) => {
@@ -40,7 +44,7 @@
     '..khhhhhhk..',
     '..khsssshk..',
     '..kskssksk..',
-    '..kssssssk..',
+    '..krssssrk..',
     '...ksddsk...',
     '....kssk....',
     '..kbbbbbbk..',
@@ -62,7 +66,7 @@
     '..khhhhhhk..',
     '..khhhsssk..',
     '..khhsskss..',
-    '..khhsssk...',
+    '..khhsrsk...',
     '...khsssk...',
     '....kssk....',
     '...kbbbbk...',
@@ -82,6 +86,9 @@
   const FRONT_TYPE = [withRows(FRONT, { 11: '.ksbbbbbbsk.', 12: '.kbbbbbbbbk.' }), FRONT];
   const BACK_TYPE = [withRows(BACK, { 11: '.ksbbbbbbsk.', 12: '.kbbbbbbbbk.' }), BACK];
   const FRONT_READ = withRows(FRONT, { 11: '.kbbbbbbbbk.', 12: '.kbbbbbbbbk.' });
+  // Eyes closed for a frame every few seconds; the timing is offset per sprite so they don't blink in unison.
+  const blinkRow = (rows) => withRows(rows, { 5: '..ksdssdsk..' });
+  const blinking = (now, seed) => ((now + seed * 733) % 3400) < 130;
 
   // Small per-role tells. Headwear shows from every side; the rest only from the front.
   const HEADWEAR = {
@@ -116,7 +123,7 @@
   }
   function drawCharacter(g, role, x, y, rows, view, flip) {
     const lane = LANE[role] || LANE.assembly;
-    const pal = { k: C.outline, s: C.skin, d: C.skinDark, h: HAIR[role] || C.hair, b: lane, c: shade(lane, 0.72), p: C.pants, o: C.shoe, w: '#ffffff' };
+    const pal = { k: C.outline, s: C.skin, d: C.skinDark, r: C.blush, h: HAIR[role] || C.hair, b: lane, c: shade(lane, 0.72), p: C.pants, o: C.shoe, w: '#ffffff' };
     drawRows(g, rows, x, y, pal, flip);
     const px = (c) => x + (flip ? 11 - c : c);
     for (const [c, r, key] of HEADWEAR[role] || []) { g.fillStyle = pal[key]; g.fillRect(px(c), y + r, 1, 1); }
@@ -137,8 +144,10 @@
   /* ---------- furniture (tile coords; x,y is the top-left tile) ---------- */
   function drawDesk(g, tx, ty, opts) {
     const x = tx * T, y = ty * T;
+    g.fillStyle = C.shadow; g.fillRect(x + 2, y + 14, 30, 2);
     g.fillStyle = C.woodEdge; g.fillRect(x + 1, y + 3, 30, 12);
     g.fillStyle = C.wood; g.fillRect(x + 1, y + 3, 30, 9);
+    g.fillStyle = C.woodLight; g.fillRect(x + 2, y + 3, 28, 1);
     g.fillStyle = C.woodDark; g.fillRect(x + 1, y + 12, 30, 2);
     // monitor on the left half, screen toward the room (a cheat every office sim makes)
     g.fillStyle = C.monitor; g.fillRect(x + 4, y - 3, 11, 9); g.fillRect(x + 8, y + 6, 3, 2); g.fillRect(x + 6, y + 8, 7, 1);
@@ -148,18 +157,27 @@
     if (opts.mug) { g.fillStyle = C.mug; g.fillRect(x + 25, y + 6, 3, 3); g.fillStyle = C.coffee; g.fillRect(x + 25, y + 6, 3, 1); }
     if (opts.magnifier) { g.fillStyle = C.metal; g.fillRect(x + 23, y + 5, 4, 4); g.fillStyle = '#9fd0e8'; g.fillRect(x + 24, y + 6, 2, 2); g.fillStyle = C.metal; g.fillRect(x + 27, y + 9, 1, 1); g.fillRect(x + 28, y + 10, 1, 1); }
   }
+  // A low seat with a slim back: tall chairs read as cabinets from above.
   function drawChair(g, tx, ty) {
     const x = tx * T, y = ty * T;
-    g.fillStyle = C.chairDark; g.fillRect(x + 2, y - 2, 12, 14);
-    g.fillStyle = C.chair; g.fillRect(x + 3, y - 1, 10, 12);
-    g.fillStyle = C.metalDark; g.fillRect(x + 2, y - 4, 12, 3);
+    g.fillStyle = C.shadow; g.fillRect(x + 3, y + 12, 10, 2);
+    g.fillStyle = C.chairDark; g.fillRect(x + 3, y + 2, 10, 10);
+    g.fillStyle = C.cushion; g.fillRect(x + 4, y + 3, 8, 7);
+    g.fillStyle = C.chairDark; g.fillRect(x + 3, y - 1, 10, 3); g.fillStyle = C.chair; g.fillRect(x + 4, y, 8, 1);
   }
-  function drawCouch(g, tx, ty) {
+  function drawCouch(g, tx, ty, now) {
     const x = tx * T, y = ty * T;
-    g.fillStyle = '#7a4b3a'; g.fillRect(x + 1, y - 2, T * 2 - 2, 14);
-    g.fillStyle = '#9a6248'; g.fillRect(x + 2, y + 3, T * 2 - 4, 8);
-    g.fillStyle = '#b87556'; g.fillRect(x + 3, y + 4, T - 4, 6); g.fillRect(x + T + 1, y + 4, T - 4, 6);
-    g.fillStyle = '#5c3a2c'; g.fillRect(x + 1, y + 11, T * 2 - 2, 1);
+    g.fillStyle = C.couchDark; g.fillRect(x + 1, y - 3, T * 2 - 2, 16);
+    g.fillStyle = C.couch; g.fillRect(x + 2, y - 2, T * 2 - 4, 6);
+    g.fillStyle = C.couchLight; g.fillRect(x + 3, y + 4, T - 4, 6); g.fillRect(x + T + 1, y + 4, T - 4, 6);
+    g.fillStyle = C.cushion; g.fillRect(x + 4, y + 5, 5, 4);
+    g.fillStyle = C.couchDark; g.fillRect(x + 1, y + 11, T * 2 - 2, 2);
+    // the office cat, asleep on the right cushion; its tail moves now and then
+    const cx = x + T + 3, cy = y + 3;
+    g.fillStyle = C.cat; g.fillRect(cx, cy + 2, 9, 5); g.fillRect(cx + 6, cy, 4, 4); g.fillRect(cx + 6, cy - 1, 1, 1); g.fillRect(cx + 9, cy - 1, 1, 1);
+    g.fillStyle = C.catLight; g.fillRect(cx + 1, cy + 3, 5, 3);
+    const tail = Math.floor(now / 900) % 2; g.fillStyle = C.cat; g.fillRect(cx - 2, cy + 5 + tail, 3, 1); g.fillRect(cx - 3, cy + 4 + tail, 1, 1);
+    if (Math.floor(now / 1600) % 2) { g.fillStyle = C.bubbleEdge; g.fillRect(cx + 11, cy - 3, 1, 1); g.fillRect(cx + 13, cy - 5, 1, 1); }
   }
   function drawCooler(g, tx, ty) {
     const x = tx * T, y = ty * T;
@@ -182,7 +200,7 @@
     const x = tx * T, y = ty * T;
     g.fillStyle = C.woodEdge; g.fillRect(x, y - 6, T * 3, 22);
     g.fillStyle = C.woodDark; g.fillRect(x + 1, y - 5, T * 3 - 2, 20);
-    const books = [C.book1, C.book2, C.book3, C.book4, C.book5];
+    const books = [C.book1, C.book2, C.book3, C.book4, C.book5, C.book6];
     for (let shelf = 0; shelf < 2; shelf++) {
       const sy = y - 4 + shelf * 9;
       let bx = x + 2, i = shelf * 3;
@@ -193,8 +211,10 @@
   }
   function drawTable(g, tx, ty, papers) {
     const x = tx * T, y = ty * T;
+    g.fillStyle = C.shadow; g.fillRect(x + 4, y + T * 2 - 1, T * 4 - 6, 3);
     g.fillStyle = C.woodEdge; g.fillRect(x + 2, y + 2, T * 4 - 4, T * 2 - 2);
     g.fillStyle = C.wood; g.fillRect(x + 3, y + 3, T * 4 - 6, T * 2 - 6);
+    g.fillStyle = C.woodLight; g.fillRect(x + 4, y + 3, T * 4 - 8, 1);
     g.fillStyle = C.woodDark; g.fillRect(x + 3, y + T * 2 - 4, T * 4 - 6, 2);
     const n = Math.min(papers, 8);
     for (let i = 0; i < n; i++) drawPaper(g, x + 12 + (i % 4) * 9, y + 8 + Math.floor(i / 4) * 8 - (i % 2), 'paper');
@@ -224,11 +244,17 @@
     g.fillStyle = C.woodEdge; g.fillRect(x + 2, y + 4, 12, 10); g.fillStyle = C.wood; g.fillRect(x + 2, y + 4, 12, 7);
     if (envelope) { g.fillStyle = C.envelope; g.fillRect(x + 4, y + 1, 8, 5); g.fillStyle = C.envelopeDark; g.fillRect(x + 4, y + 1, 8, 1); g.fillRect(x + 7, y + 3, 2, 1); g.fillRect(x + 6, y + 2, 1, 1); g.fillRect(x + 9, y + 2, 1, 1); }
   }
-  function drawPlant(g, tx, ty) {
+  function drawPlant(g, tx, ty, kind) {
     const x = tx * T, y = ty * T;
-    g.fillStyle = C.potDark; g.fillRect(x + 4, y + 8, 8, 6); g.fillStyle = C.pot; g.fillRect(x + 4, y + 7, 8, 2);
-    g.fillStyle = C.plantDark; g.fillRect(x + 2, y - 1, 5, 7); g.fillRect(x + 8, y - 3, 6, 9);
-    g.fillStyle = C.plant; g.fillRect(x + 3, y, 3, 5); g.fillRect(x + 9, y - 2, 3, 7); g.fillRect(x + 6, y + 3, 4, 5);
+    g.fillStyle = C.shadow; g.fillRect(x + 3, y + 13, 10, 2);
+    g.fillStyle = C.potDark; g.fillRect(x + 4, y + 8, 8, 6); g.fillStyle = C.pot; g.fillRect(x + 4, y + 7, 8, 2); g.fillRect(x + 5, y + 9, 2, 3);
+    if (kind === 'small') {
+      g.fillStyle = C.plantDark; g.fillRect(x + 4, y + 3, 8, 5); g.fillStyle = C.plant; g.fillRect(x + 5, y + 2, 3, 4); g.fillRect(x + 9, y + 3, 2, 3); g.fillStyle = C.plantLight; g.fillRect(x + 6, y + 2, 1, 1);
+      return;
+    }
+    g.fillStyle = C.plantDark; g.fillRect(x + 2, y - 1, 5, 7); g.fillRect(x + 8, y - 3, 6, 9); g.fillRect(x + 5, y + 2, 5, 6);
+    g.fillStyle = C.plant; g.fillRect(x + 3, y, 3, 5); g.fillRect(x + 9, y - 2, 3, 7); g.fillRect(x + 6, y + 3, 3, 4);
+    g.fillStyle = C.plantLight; g.fillRect(x + 4, y + 1, 1, 2); g.fillRect(x + 10, y - 1, 1, 2);
   }
   function drawCoffeeMachine(g, tx, ty) {
     const x = tx * T, y = ty * T;
@@ -309,13 +335,14 @@
   let stateRef = null, muted = false;
   const chars = new Map();   // deskKey -> character
   let flights = [];          // the brief gliding to each research desk
+  let sparkles = [];         // a little glint where a paper just landed
   let lastNow = 0;
 
   function charFor(key) {
     let c = chars.get(key);
     if (!c) {
       const d = DESK[key];
-      c = { key, role: d.role, x: d.home[0], y: d.home[1], path: [], facing: 'down', at: 'home', want: 'home', trips: [], trip: null, carry: null, slot: 0, active: null };
+      c = { key, role: d.role, x: d.home[0], y: d.home[1], path: [], facing: 'down', at: 'home', want: 'home', trips: [], trip: null, carry: null, slot: 0, active: null, seed: chars.size + 1, arrivedAt: 0 };
       chars.set(key, c);
     }
     return c;
@@ -325,12 +352,12 @@
     if (place === 'library') return LIBRARY.slots[c.slot % 3];
     return DESK[c.key].home;
   }
+  // Agents narrate between searches, so the latest entry alone would send them home and back every
+  // few seconds. A station stays wanted while any of the last three entries is a search or a page read.
   function wantedPlace(agent) {
     if (!agent || agent.status !== 'running') return 'home';
-    const e = agent.trace[agent.trace.length - 1];
-    if (!e) return 'home';
-    if (e.kind === 'search') return 'search';
-    if (e.kind === 'fetch') return 'library';
+    const tail = agent.trace.slice(-3).reverse();
+    for (const e of tail) { if (e.kind === 'search') return 'search'; if (e.kind === 'fetch') return 'library'; }
     return 'home';
   }
   const atTile = (c, t) => Math.round(c.x) === t[0] && Math.round(c.y) === t[1];
@@ -373,7 +400,7 @@
     if (c.trip?.targetKey === agentId || c.trips.some((t) => t.targetKey === agentId)) return;
     queueTrip('assembly', agentId, 'question');
   }
-  function reset() { chars.clear(); flights = []; }
+  function reset() { chars.clear(); flights = []; sparkles = []; }
 
   function inflightTo(targetKey) { let n = 0; for (const c of chars.values()) if (c.trip && c.trip.phase === 'go' && c.trip.targetKey === targetKey) n++; return n; }
   function pileCount(key) {
@@ -390,15 +417,41 @@
   const g = off.getContext('2d');
   let canvas = null, ctx = null, visible = false, raf = 0;
 
-  function drawRoom() {
+  function drawRoom(now) {
     g.fillStyle = '#14202E'; g.fillRect(0, 0, W, H);
-    for (let y = 1; y < ROWS; y++) for (let x = 0; x < COLS; x++) { g.fillStyle = (x + y) % 2 ? C.floorA : C.floorB; g.fillRect(x * T, y * T, T, T); }
-    g.fillStyle = C.rugEdge; g.fillRect(11 * T, 4 * T + 8, 6 * T, 5 * T); g.fillStyle = C.rug; g.fillRect(11 * T + 2, 4 * T + 10, 6 * T - 4, 5 * T - 4);
-    g.fillStyle = C.wall; g.fillRect(0, 0, W, T + 4); g.fillStyle = C.wallTop; g.fillRect(0, 0, W, 3); g.fillStyle = C.wallLine; g.fillRect(0, T + 4, W, 1);
-    for (const wx of [4, 6, 22, 24]) { g.fillStyle = C.windowFrame; g.fillRect(wx * T + 1, 4, 14, 12); g.fillStyle = C.window; g.fillRect(wx * T + 2, 5, 12, 10); g.fillStyle = C.windowLight; g.fillRect(wx * T + 3, 6, 4, 3); g.fillStyle = C.windowFrame; g.fillRect(wx * T + 8, 5, 1, 10); }
+    // oak planks: one plank per row, seams staggered every other row
+    for (let y = 1; y < ROWS; y++) {
+      g.fillStyle = y % 2 ? C.floorA : C.floorB; g.fillRect(0, y * T, W, T);
+      g.fillStyle = C.seam; g.fillRect(0, y * T, W, 1);
+      for (let x = (y % 2) * T; x < W; x += T * 2) g.fillRect(x + (y % 3) * 5, y * T, 1, T);
+    }
+    // rug under the meeting table, with a border and a simple diamond pattern
+    g.fillStyle = C.rugEdge; g.fillRect(11 * T, 4 * T + 8, 6 * T, 5 * T);
+    g.fillStyle = C.rug; g.fillRect(11 * T + 2, 4 * T + 10, 6 * T - 4, 5 * T - 4);
+    g.fillStyle = C.rugDark; for (let i = 0; i < 6; i++) for (let j = 0; j < 5; j++) g.fillRect(11 * T + 8 + i * 15, 4 * T + 16 + j * 15, 3, 3);
+    g.fillStyle = C.rugAccent; g.fillRect(11 * T + 6, 4 * T + 14, 6 * T - 12, 1); g.fillRect(11 * T + 6, 9 * T + 1, 6 * T - 12, 1); g.fillRect(11 * T + 6, 4 * T + 14, 1, 5 * T - 12); g.fillRect(17 * T - 7, 4 * T + 14, 1, 5 * T - 12);
+    // back wall: cream, a shadow band where it meets the floor, a baseboard
+    g.fillStyle = C.wall; g.fillRect(0, 0, W, T + 4);
+    g.fillStyle = C.wallTop; g.fillRect(0, 0, W, 3);
+    g.fillStyle = C.wallShade; g.fillRect(0, T - 2, W, 6);
+    g.fillStyle = C.baseboard; g.fillRect(0, T + 2, W, 2); g.fillStyle = C.wallLine; g.fillRect(0, T + 4, W, 1);
+    // windows with sky and a slow cloud
+    const drift = Math.floor(now / 400) % 40;
+    for (const wx of [4, 6, 22, 24]) {
+      g.fillStyle = C.windowFrame; g.fillRect(wx * T + 1, 3, 14, 13);
+      g.fillStyle = C.sky; g.fillRect(wx * T + 2, 4, 12, 11); g.fillStyle = C.skyLight; g.fillRect(wx * T + 2, 12, 12, 3);
+      g.fillStyle = C.cloud; const cx = wx * T + 2 + ((drift + wx * 3) % 16) - 4; g.fillRect(Math.max(wx * T + 2, cx), 7, Math.min(5, wx * T + 14 - Math.max(wx * T + 2, cx)), 2);
+      g.fillStyle = C.windowFrame; g.fillRect(wx * T + 8, 4, 1, 11); g.fillRect(wx * T + 2, 9, 12, 1);
+    }
+    // pictures and a clock on the wall
+    g.fillStyle = C.windowFrame; g.fillRect(12 * T + 4, 4, 9, 8); g.fillStyle = C.rugAccent; g.fillRect(12 * T + 5, 5, 7, 6); g.fillStyle = C.rug; g.fillRect(12 * T + 6, 8, 5, 3);
+    g.fillStyle = C.windowFrame; g.fillRect(13 * T + 2, 5, 7, 7); g.fillStyle = C.book2; g.fillRect(13 * T + 3, 6, 5, 5); g.fillStyle = C.cloud; g.fillRect(13 * T + 5, 7, 1, 1);
+    g.fillStyle = C.outline; g.fillRect(20 * T + 3, 4, 8, 8); g.fillStyle = C.cloud; g.fillRect(20 * T + 4, 5, 6, 6); g.fillStyle = C.outline; g.fillRect(20 * T + 6, 6, 1, 3); g.fillRect(20 * T + 7, 8, 2, 1);
+    // side walls, door
     g.fillStyle = C.wall; g.fillRect(0, 0, 6, H); g.fillRect(W - 6, 0, 6, H);
+    g.fillStyle = C.wallShade; g.fillRect(5, T + 4, 1, H); g.fillRect(W - 6, T + 4, 1, H);
     g.fillStyle = C.wallLine; g.fillRect(6, T + 4, 1, H); g.fillRect(W - 7, T + 4, 1, H);
-    g.fillStyle = C.woodDark; g.fillRect(0, 10 * T, 6, 24); g.fillStyle = C.wood; g.fillRect(1, 10 * T + 1, 4, 22); g.fillStyle = C.envelopeDark; g.fillRect(4, 10 * T + 11, 1, 2);
+    g.fillStyle = C.woodDark; g.fillRect(0, 10 * T, 6, 24); g.fillStyle = C.wood; g.fillRect(1, 10 * T + 1, 4, 22); g.fillStyle = C.envelope; g.fillRect(4, 10 * T + 11, 1, 2);
   }
 
   function frame(now) {
@@ -421,14 +474,16 @@
       c.active = active;
       if (c.trip) {
         if (!step(c, dt)) {
-          if (c.trip.phase === 'go') { c.trip.phase = 'back'; c.carry = null; setPath(c, blocked, d.home); }
+          if (c.trip.phase === 'go') { sparkles.push({ x: c.x * T + 8, y: c.y * T - 6, start: now }); c.trip.phase = 'back'; c.carry = null; setPath(c, blocked, d.home); }
           else { c.trip = null; c.at = 'home'; c.want = 'home'; c.facing = 'down'; }
         }
         continue;
       }
-      const want = c.trips.length ? 'home' : wantedPlace(active);
-      if (want === 'search') c.slot = searchSlot++;
-      if (want === 'library') c.slot = librarySlot++;
+      let want = c.trips.length ? 'home' : wantedPlace(active);
+      // Hysteresis: stay put for a moment after arriving, unless a hand-off is waiting or the agent is done.
+      if (want !== c.at && c.at !== 'moving' && !c.trips.length && active.status === 'running' && now - c.arrivedAt < DWELL_MS) want = c.at;
+      if (want === 'search' && c.at !== 'search') c.slot = searchSlot++; else if (want === 'search') searchSlot = Math.max(searchSlot, c.slot + 1);
+      if (want === 'library' && c.at !== 'library') c.slot = librarySlot++; else if (want === 'library') librarySlot = Math.max(librarySlot, c.slot + 1);
       if (c.trips.length && atTile(c, d.home) && !c.path.length) {
         c.trip = { ...c.trips.shift(), phase: 'go' };
         c.carry = c.trip.paperKind;
@@ -438,17 +493,18 @@
       const target = placeTile(c, want);
       if (want !== c.want || (!c.path.length && !atTile(c, target))) { c.want = want; setPath(c, blocked, target); }
       if (step(c, dt)) { c.at = 'moving'; continue; }
+      if (c.at !== want) c.arrivedAt = now;
       c.at = want;
       c.facing = want === 'search' ? 'up' : 'down';
     }
 
-    drawRoom();
+    drawRoom(now);
     const items = [];
     const push = (depthY, draw) => items.push({ depthY, draw });
 
-    for (const p of PLANTS) push(p[1] + 0.9, () => drawPlant(g, p[0], p[1]));
+    PLANTS.forEach((p, i) => push(p[1] + 0.9, () => drawPlant(g, p[0], p[1], i % 2 ? 'small' : 'tall')));
     push(COFFEE[1] + 0.9, () => drawCoffeeMachine(g, COFFEE[0], COFFEE[1]));
-    push(COUCH[1] + 0.9, () => drawCouch(g, COUCH[0], COUCH[1]));
+    push(COUCH[1] + 0.9, () => drawCouch(g, COUCH[0], COUCH[1], now));
     push(COOLER[1] + 0.9, () => drawCooler(g, COOLER[0], COOLER[1]));
     push(INBOX[1] + 0.9, () => drawInbox(g, INBOX[0], INBOX[1], !!s.brief));
     const searchOn = [null, null, null]; let readers = 0;
@@ -487,6 +543,8 @@
         else if (a.status === 'running' && c.at === 'home') rows = FRONT_TYPE[Math.floor(now / 260) % 2];
         else rows = FRONT;
         const bob = !moving && a.status !== 'running' ? Math.round(Math.sin(now / 700 + c.x) * 0.5) : 0;
+        g.fillStyle = C.shadow; g.fillRect(x + 2, y + 17, 8, 2); g.fillRect(x + 3, y + 19, 6, 1);
+        if (view === 'front' && !moving && blinking(now, c.seed)) rows = blinkRow(rows);
         drawCharacter(g, c.role, x, y + bob, rows, view, flip);
         if (c.at === 'library' && !moving) drawPaper(g, x + 3, y + 10, 'paper');
         if (c.carry) drawPaper(g, x + (c.facing === 'left' ? -3 : 9), y + 8, c.carry);
@@ -506,6 +564,11 @@
       push(99, () => drawPaper(g, Math.round(x), Math.round(y), 'paper'));
     }
     flights = flights.filter((fl) => now - fl.start < fl.dur);
+    for (const sp of sparkles) {
+      const t = (now - sp.start) / 550, r = 3 + t * 6;
+      push(99, () => { g.fillStyle = t < 0.5 ? C.envelope : C.cloud; for (const [ax, ay] of [[r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, -r * 0.7]]) g.fillRect(Math.round(sp.x + ax), Math.round(sp.y + ay), 1, 1); });
+    }
+    sparkles = sparkles.filter((sp) => now - sp.start < 550);
 
     items.sort((p, q) => p.depthY - q.depthY);
     for (const it of items) it.draw();
@@ -532,14 +595,14 @@
         ly += hPx + dpr;
       }
       placed.push({ x: lx - wPx / 2, y: ly - dpr, w: wPx, h: hPx + dpr });
-      ctx.fillStyle = 'rgba(20,32,46,.82)'; ctx.fillRect(lx - wPx / 2, ly - dpr, wPx, hPx);
+      ctx.fillStyle = 'rgba(20,32,46,.86)'; ctx.beginPath(); ctx.roundRect(lx - wPx / 2, ly - dpr, wPx, hPx, 4 * dpr); ctx.fill();
       ctx.fillStyle = a.status === 'running' ? LANE[c.role] : a.status === 'failed' ? C.bad : a.status === 'completed' ? '#B8C4D0' : '#7F91A3';
       ctx.fillText(a.label, lx, ly);
     }
-    ctx.fillStyle = '#6B7E92'; ctx.font = `${Math.round(10.5 * dpr)}px "Bricolage Grotesque", system-ui, sans-serif`;
-    const tag = (tx, ty, text) => ctx.fillText(text, dx + tx * T * scale, dy + ty * T * scale);
+    ctx.font = `600 ${Math.round(10.5 * dpr)}px "Bricolage Grotesque", system-ui, sans-serif`;
+    const tag = (tx, ty, text, onWall) => { ctx.fillStyle = onWall ? '#8a7454' : 'rgba(255,255,255,.75)'; ctx.fillText(text, dx + tx * T * scale, dy + ty * T * scale); };
     // Station names go on the wall above them; the floor in front is where people stand.
-    tag(10.5, 0.15, 'Search'); tag(15.5, 0.15, 'Library'); tag(14, 8.2, 'Assembly table'); tag(26, 10.15, 'Report'); tag(1.5, 6.05, 'Brief');
+    tag(10.5, 0.1, 'Search', true); tag(15.5, 0.1, 'Library', true); tag(14, 8.2, 'Assembly table'); tag(26, 10.15, 'Report'); tag(1.5, 6.05, 'Brief');
   }
 
   function resize() {
