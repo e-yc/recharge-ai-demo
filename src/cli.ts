@@ -2,13 +2,13 @@ import { config } from 'dotenv';
 config({ quiet: true });
 
 import { spawn } from 'node:child_process';
-import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { serve } from '@hono/node-server';
 import { Command, InvalidArgumentError } from 'commander';
 import { RunBus, type RunEvent } from './events.js';
 import { runResearchPipeline } from './pipeline.js';
-import { RESEARCH_DATA_DIR, createRunSink, newRunId, readRunEvents } from './run-store.js';
+import { RECORDED_DIR, RESEARCH_DATA_DIR, createRunSink, newRunId, readRecordedEvents, readRunEvents, summariseEvents } from './run-store.js';
 import { buildSampleRun } from './sample-run.js';
 import { RunRegistry, createResearchApp } from './server.js';
 
@@ -140,7 +140,33 @@ program
     copyFileSync(new URL('index.html', ui), join(opts.out, 'index.html'));
     copyFileSync(new URL('office.js', ui), join(opts.out, 'office.js'));
     writeFileSync(join(opts.out, 'config.js'), `window.RESEARCH_API = ${JSON.stringify(opts.api.replace(/\/$/, ''))};\n`);
-    console.log(opts.out);
+    // Recorded runs ship with the page, so past runs replay even when the run server is unreachable.
+    const runsDir = join(opts.out, 'runs');
+    mkdirSync(runsDir, { recursive: true });
+    const index = [];
+    for (const runId of existsSync(RECORDED_DIR) ? readdirSync(RECORDED_DIR) : []) {
+      const events = readRecordedEvents(runId);
+      const summary = summariseEvents(runId, events);
+      if (!summary || summary.status !== 'completed') continue;
+      writeFileSync(join(runsDir, `${runId}.json`), JSON.stringify(events));
+      index.push(summary);
+    }
+    index.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    writeFileSync(join(runsDir, 'index.json'), JSON.stringify(index));
+    console.log(`${opts.out} (${index.length} recorded run${index.length === 1 ? '' : 's'})`);
+  });
+
+program
+  .command('archive')
+  .description('Copy a finished run from data/ into recorded/, which is committed and shipped with the page')
+  .argument('<runId>', 'a directory name under data/research')
+  .action((runId: string) => {
+    const events = readRunEvents(runId);
+    const summary = summariseEvents(runId, events);
+    if (!summary) { console.error(`No run named ${runId}.`); process.exitCode = 1; return; }
+    if (summary.status !== 'completed') { console.error(`Run ${runId} is ${summary.status}; only completed runs are archived.`); process.exitCode = 1; return; }
+    cpSync(join(RESEARCH_DATA_DIR, runId), join(RECORDED_DIR, runId), { recursive: true });
+    console.log(join(RECORDED_DIR, runId));
   });
 
 program

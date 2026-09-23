@@ -659,7 +659,8 @@
     const form = e.currentTarget; const btn = form.querySelector('button.start'); const err = $('composer-error');
     btn.disabled = true; err.textContent = '';
     try {
-      const res = await fetch(`${API}/api/runs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ brief: form.brief.value }) });
+      const res = await fetch(`${API}/api/runs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ brief: form.brief.value }) }).catch(() => null);
+      if (!res) throw new Error('The run server is not reachable right now. Recorded runs still replay; a new brief needs the server up.');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not start the run.');
       goToRun(data.runId);
@@ -901,21 +902,39 @@
   setInterval(() => { if (state.status === 'running' && !replay.active) renderHeader(); }, 1000);
 
   /* ---------- runs & stream ---------- */
+  // Recorded runs ship with the page (runs/*.json) and load even when the run server is down; the
+  // server adds live and unarchived runs on top when it's reachable.
+  const recorded = new Set();
   async function loadRuns(current) {
     const sel = $('runs');
-    let runs = [];
-    try {
-      runs = await (await fetch(`${API}/api/runs`)).json();
-      sel.innerHTML = `<option value="">${runs.length ? 'Past runs' : 'No runs yet'}</option>` + runs.map((r) => `<option value="${esc(r.runId)}" ${r.runId === current ? 'selected' : ''}>${esc(r.brief.slice(0, 60))}${r.brief.length > 60 ? '…' : ''} (${r.status})</option>`).join('');
-      if (current && !runs.some((r) => r.runId === current)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(current)}" selected>${esc(current)}</option>`);
-    } catch { sel.innerHTML = '<option value="">Runs unavailable</option>'; }
+    const [staticRuns, liveRuns] = await Promise.all([
+      fetch('runs/index.json').then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API}/api/runs`).then((r) => (r.ok ? r.json() : Promise.reject())).catch(() => null),
+    ]);
+    for (const r of staticRuns) recorded.add(r.runId);
+    const byId = new Map();
+    for (const r of [...(liveRuns || []), ...staticRuns]) if (!byId.has(r.runId)) byId.set(r.runId, r);
+    const runs = [...byId.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    const head = runs.length ? (liveRuns ? 'Past runs' : 'Recorded runs (server offline)') : liveRuns ? 'No runs yet' : 'Runs unavailable';
+    sel.innerHTML = `<option value="">${head}</option>` + runs.map((r) => `<option value="${esc(r.runId)}" ${r.runId === current ? 'selected' : ''}>${esc(r.brief.slice(0, 60))}${r.brief.length > 60 ? '…' : ''} (${r.status})</option>`).join('');
+    if (current && !runs.some((r) => r.runId === current)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(current)}" selected>${esc(current)}</option>`);
+    serverOnline = !!liveRuns;
     return runs;
   }
+  let serverOnline = true;
   $('runs').addEventListener('change', (e) => { if (e.target.value) goToRun(e.target.value); });
   if (API) $('cost').insertAdjacentHTML('afterend', `<span title="${esc(API)}" style="color:var(--dim)">via ${esc(new URL(API).hostname)}</span>`);
 
-  function connect(runId) {
+  async function connect(runId) {
     isLive = true;
+    // A recorded run comes from the static file: same events, no server needed.
+    if (recorded.has(runId) || !serverOnline) {
+      try {
+        const res = await fetch(`runs/${encodeURIComponent(runId)}.json`);
+        if (res.ok) { for (const ev of await res.json()) receive(ev); isLive = false; invalidate(); return; }
+      } catch {}
+      if (!serverOnline) { isLive = false; invalidate(); return; }
+    }
     const es = new EventSource(`${API}/api/runs/${encodeURIComponent(runId)}/events`);
     es.onmessage = (m) => { try { receive(JSON.parse(m.data)); } catch (err) { console.error(err); } };
     es.addEventListener('done', () => { isLive = false; es.close(); invalidate(); });
@@ -926,10 +945,9 @@
   // empty install (no runs at all) opens the composer.
   (async () => {
     const wanted = new URLSearchParams(location.search).get('run');
-    if (wanted) connect(wanted);
     render();
     const runs = await loadRuns(wanted);
-    if (wanted) return;
+    if (wanted) { connect(wanted); return; }
     if (runs.length) {
       const q = new URLSearchParams(location.search); q.set('run', runs[0].runId);
       history.replaceState(null, '', `?${q.toString()}`);

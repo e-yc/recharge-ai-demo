@@ -10,6 +10,8 @@ import type { RunEvent, RunEventSink } from './events.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const RESEARCH_DATA_DIR = join(here, '..', 'data', 'research');
+/** Finished runs worth keeping: committed, and bundled into the static site by `export`. */
+export const RECORDED_DIR = join(here, '..', 'recorded');
 
 export interface RunSummary {
   runId: string;
@@ -40,6 +42,21 @@ export function readRunEvents(runId: string): RunEvent[] {
   const file = join(runDir(runId), 'events.jsonl');
   if (!existsSync(file)) return [];
   return parseEventLines(readFileSync(file, 'utf8'));
+}
+
+export function readRecordedEvents(runId: string): RunEvent[] {
+  const file = join(RECORDED_DIR, runId, 'events.jsonl');
+  if (!existsSync(file)) return [];
+  return parseEventLines(readFileSync(file, 'utf8'));
+}
+
+export function listRecordedRuns(): RunSummary[] {
+  if (!existsSync(RECORDED_DIR)) return [];
+  return readdirSync(RECORDED_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => summariseEvents(entry.name, readRecordedEvents(entry.name)))
+    .filter((summary): summary is RunSummary => summary !== null && summary.status === 'completed')
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
 export function parseEventLines(text: string): RunEvent[] {

@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
 import { RunBus, type RunEvent } from './events.js';
-import { listStoredRuns, readRunEvents, summariseEvents, type RunSummary } from './run-store.js';
+import { listRecordedRuns, listStoredRuns, readRecordedEvents, readRunEvents, summariseEvents, type RunSummary } from './run-store.js';
 
 const PAGE_URL = new URL('../ui/index.html', import.meta.url);
 const OFFICE_URL = new URL('../ui/office.js', import.meta.url);
@@ -53,6 +53,13 @@ export function createResearchApp({ registry, startRun }: ResearchServerOptions)
   // Locally the page talks to its own origin; the static Vercel build ships a config.js that points here.
   app.get('/config.js', (c) => c.body('window.RESEARCH_API = "";', 200, { 'content-type': 'text/javascript; charset=utf-8' }));
   app.get('/favicon.ico', (c) => c.body(null, 204));
+  // The same recorded runs the static export ships, so the page behaves identically here and on Vercel.
+  app.get('/runs/index.json', (c) => c.json(listRecordedRuns()));
+  app.get('/runs/:file', (c) => {
+    const runId = c.req.param('file').replace(/\.json$/, '');
+    const events = readRecordedEvents(runId);
+    return events.length ? c.json(events) : c.json({ error: 'No recorded run with that id.' }, 404);
+  });
   // The demo page may be served from another origin (Vercel) with this server behind a tunnel.
   app.use('/api/*', cors());
 
